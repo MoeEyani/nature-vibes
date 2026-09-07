@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+/*
+ * Nature Vibes design tokens.
+ * Brand feel: premium, natural, calm — dark forest green + warm cream.
+ * Rebranding should mean editing this block plus src/constants/brand.ts.
+ */
+@theme {
+  --color-brand-green: #1d5138;
+  --color-brand-green-soft: #2c6b4a;
+  --color-deep-green: #0f2e20;
+  --color-deep-green-dark: #08150f;
+  --color-leaf: #7fae6b;
+  --color-cream: #f5f0e4;
+  --color-off-white: #fbfaf6;
+  --color-sand: #e8e1d2;
+  --color-bark: #4a3b2c;
+  --color-ink: #14201a;
+  --color-ink-muted: #5c6b62;
+  --color-ink-subtle: #8a978f;
+  --color-line: #e2ddd0;
+  --color-water: #2f7f8f;
+  --color-warn: #b7791f;
+  --color-review: #9a5b1d;
+  --color-danger: #a13a2e;
+  --color-ok: #2c6b4a;
+
+  --radius-card: 1rem;
+  --radius-pill: 999px;
+
+  --shadow-soft: 0 1px 2px rgb(20 32 26 / 0.05), 0 8px 24px rgb(20 32 26 / 0.06);
+  --shadow-lift: 0 2px 4px rgb(20 32 26 / 0.06), 0 18px 40px rgb(20 32 26 / 0.12);
+
+  --font-display: Georgia, "Times New Roman", serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+html,
+body {
+  background: var(--color-off-white);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Reduce jank while the 3D canvas resizes inside a flex column. */
+canvas {
+  display: block;
+  touch-action: none;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+/* Slim scrollbars for the tall option columns. */
+.nv-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
