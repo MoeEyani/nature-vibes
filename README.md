@@ -19,14 +19,26 @@ summary below.
 
 ## Live demo
 
-The app is published to GitHub Pages on every push:
-
 **https://moeeyani.github.io/nature-vibes/**
 
-First time only, someone with repository admin rights has to switch Pages on:
-**Settings → Pages → Build and deployment → Source: _GitHub Actions_**. After
-that the `Deploy to GitHub Pages` workflow builds, typechecks, tests and
-publishes automatically.
+There are two ways to publish there. Pick one — running both at once makes them
+fight over the same Pages deployment.
+
+**A. Deploy from a branch (no CI required).** The `gh-pages` branch holds a
+prebuilt static site. Set **Settings → Pages → Source: _Deploy from a branch_**,
+branch `gh-pages`, folder `/ (root)`. Refresh it after changing the app with:
+
+```bash
+npm run build:pages     # writes out/ with the right base path
+```
+
+then commit the contents of `out/` to `gh-pages`. Use this when GitHub Actions
+is unavailable on the account.
+
+**B. GitHub Actions (automatic).** Set **Settings → Pages → Source:
+_GitHub Actions_**. The `Deploy to GitHub Pages` workflow then typechecks,
+tests, builds and publishes on every push. This needs Actions to be able to
+start jobs on the account.
 
 ## Running the project
 
