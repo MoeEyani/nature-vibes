@@ -17,6 +17,17 @@ summary below.
 
 ---
 
+## Live demo
+
+The app is published to GitHub Pages on every push:
+
+**https://moeeyani.github.io/nature-vibes/**
+
+First time only, someone with repository admin rights has to switch Pages on:
+**Settings → Pages → Build and deployment → Source: _GitHub Actions_**. After
+that the `Deploy to GitHub Pages` workflow builds, typechecks, tests and
+publishes automatically.
+
 ## Running the project
 
 Requires Node.js 20+.
@@ -29,14 +40,28 @@ npm run dev        # http://localhost:3000
 Other scripts:
 
 ```bash
-npm run build      # production build
-npm start          # serve the production build
-npm run typecheck  # tsc --noEmit
-npm test           # vitest — pricing, rules, normalisation, catalog, aquarium math
+npm run build         # production build
+npm start             # serve the production build
+npm run build:static  # static export into out/ (what GitHub Pages serves)
+npm run typecheck     # tsc --noEmit
+npm test              # vitest — pricing, rules, normalisation, catalog, aquarium math
 ```
 
 There is no backend, no database and no environment configuration. V1 persists
 drafts, saved designs and submitted quote requests in `localStorage`.
+
+### Static export
+
+The app has no server-side behaviour — no API routes, no server actions, no
+dynamic rendering — so `output: "export"` produces a complete build rather than
+a reduced one. Two environment variables control it:
+
+| Variable | Effect |
+| --- | --- |
+| `NEXT_OUTPUT_EXPORT=1` | Emits a static site into `out/` |
+| `NEXT_PUBLIC_BASE_PATH` | Sub-path the site is served from (`/nature-vibes` on Pages) |
+
+Both are unset locally, so `npm run dev` and `npm start` are unaffected.
 
 ---
 

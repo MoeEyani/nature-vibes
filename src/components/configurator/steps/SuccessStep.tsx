@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BRAND } from "@/constants/brand";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
@@ -21,9 +22,12 @@ export function SuccessStep() {
     return (
       <Callout tone="info" title="No request submitted yet">
         Complete the quote form to receive a design reference.{" "}
-        <a href="/design/quote" className="font-medium text-brand-green underline underline-offset-2">
+        <Link
+          href="/design/quote"
+          className="font-medium text-brand-green underline underline-offset-2"
+        >
           Go to the quote step
-        </a>
+        </Link>
         .
       </Callout>
     );

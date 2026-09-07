@@ -1,0 +1,67 @@
+name: Deploy to GitHub Pages
+
+# Publishes the configurator as a static site so it can be opened from any
+# device without a local toolchain. The app has no server-side behaviour, so a
+# static export is a complete build, not a reduced one.
+
+on:
+  push:
+    branches:
+      - main
+      - claude/nature-vibes-configurator-gfajdj
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build static site
+        env:
+          NEXT_OUTPUT_EXPORT: "1"
+          # A GitHub Pages project site is served from /<repo-name>/.
+          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+        run: npx next build
+
+      # Stops GitHub Pages' Jekyll step from dropping the _next/ directory.
+      - run: touch out/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

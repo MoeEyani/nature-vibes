@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { BRAND } from "@/constants/brand";
@@ -116,9 +117,12 @@ function SavePanel() {
             Saved as{" "}
             <span className="font-mono font-medium text-ok">{saved.reference}</span>.
             You can reopen it from{" "}
-            <a href="/my-designs" className="font-medium text-brand-green underline underline-offset-2">
+            <Link
+              href="/my-designs"
+              className="font-medium text-brand-green underline underline-offset-2"
+            >
               My Designs
-            </a>
+            </Link>
             .
           </p>
         ) : null}
@@ -279,9 +283,12 @@ function QuoteForm({ onSubmitted }: { onSubmitted: () => void }) {
             {validation.blocking.length} selection
             {validation.blocking.length === 1 ? "" : "s"} in this design cannot be
             built together. Go back to{" "}
-            <a href="/design/validation" className="font-medium text-danger underline underline-offset-2">
+            <Link
+              href="/design/validation"
+              className="font-medium text-danger underline underline-offset-2"
+            >
               Design Validation
-            </a>{" "}
+            </Link>{" "}
             to see what needs changing.
           </Callout>
         ) : null}
