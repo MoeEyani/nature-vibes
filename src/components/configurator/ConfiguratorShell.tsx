@@ -163,7 +163,11 @@ export function ConfiguratorShell({ stepId }: { stepId: StepId }) {
             <div className="flex items-center gap-3">
               {stepId === "quote" ? null : next ? (
                 <ButtonLink href={`/design/${next.id}`} size="lg">
-                  Next: {next.title} <span aria-hidden>→</span>
+                  {/* The full step title is long on a phone; the short label
+                      keeps the primary action on one line. */}
+                  <span className="hidden sm:inline">Next: {next.title}</span>
+                  <span className="sm:hidden">Next: {next.label}</span>
+                  <span aria-hidden>→</span>
                 </ButtonLink>
               ) : (
                 <Button size="lg" disabled>

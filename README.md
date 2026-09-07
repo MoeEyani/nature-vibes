@@ -63,6 +63,20 @@ a reduced one. Two environment variables control it:
 
 Both are unset locally, so `npm run dev` and `npm start` are unaffected.
 
+### Single-file build
+
+`npm run build:standalone` bundles the whole app into one self-contained HTML
+file in `dist-standalone/` (~1.7 MB, no server, no network requests). It exists
+purely to make the demo shareable as a single link or file.
+
+`tools/standalone/` aliases `next/link` and `next/navigation` to a small hash
+router so every component under `src/` is used **unchanged** — there is no
+second copy of the application. Pass `--fragment` to emit head + body content
+without the document wrapper, for hosts that supply their own.
+
+This is a distribution path only. `npm run dev`, `npm run build` and the Pages
+export all use the real Next.js router and are unaffected by it.
+
 ---
 
 ## Stack

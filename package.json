@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:static": "NEXT_OUTPUT_EXPORT=1 next build"
+    "build:static": "NEXT_OUTPUT_EXPORT=1 next build",
+    "build:standalone": "node tools/standalone/build.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.6",
@@ -24,11 +25,13 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
     "@tailwindcss/postcss": "^4.1.13",
     "@types/node": "^24.3.1",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@types/three": "^0.180.0",
+    "esbuild": "^0.28.2",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"

@@ -21,7 +21,7 @@ const SIZES: Record<Size, string> = {
 };
 
 const BASE =
-  "inline-flex items-center justify-center gap-2 rounded-pill font-medium transition-colors " +
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-pill font-medium transition-colors " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-green " +
   "disabled:cursor-not-allowed disabled:opacity-60";
 
