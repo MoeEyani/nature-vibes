@@ -1,12 +1,58 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef } from "react";
 import { ENVIRONMENTS } from "@/data/catalog";
+import {
+  ENVIRONMENT_PARAM,
+  resolveEnvironmentParam,
+} from "@/domain/configuration/environmentParam";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
 import { Callout } from "@/components/ui/Callout";
 import { OptionCard } from "@/components/ui/OptionCard";
 import { OptionGrid, Section } from "@/components/ui/Section";
 
+/**
+ * `useSearchParams` needs a Suspense boundary under static export, so the
+ * preselect logic lives in its own component.
+ */
 export function LocationStep() {
+  return (
+    <Suspense fallback={<EnvironmentOptions />}>
+      <EnvironmentPreselect />
+      <EnvironmentOptions />
+    </Suspense>
+  );
+}
+
+/**
+ * Applies `?environment=ENV-…`, which is how the home page's environment cards
+ * carry the customer's choice into the wizard.
+ *
+ * Applied once per mount so it seeds the step without fighting the customer if
+ * they then pick a different environment.
+ */
+function EnvironmentPreselect() {
+  const searchParams = useSearchParams();
+  const hydrated = useConfiguratorStore((state) => state.hydrated);
+  const setEnvironment = useConfiguratorStore((state) => state.setEnvironment);
+  const applied = useRef(false);
+
+  const requested = searchParams.get(ENVIRONMENT_PARAM);
+
+  useEffect(() => {
+    // Wait for hydration, or the restored session would overwrite the choice.
+    if (!hydrated || applied.current || !requested) return;
+
+    const environmentId = resolveEnvironmentParam(requested);
+    if (environmentId) setEnvironment(environmentId);
+    applied.current = true;
+  }, [hydrated, requested, setEnvironment]);
+
+  return null;
+}
+
+function EnvironmentOptions() {
   const environment = useConfiguratorStore((state) => state.config.environment);
   const setEnvironment = useConfiguratorStore((state) => state.setEnvironment);
 

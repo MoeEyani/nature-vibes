@@ -59,8 +59,16 @@ npm run typecheck     # tsc --noEmit
 npm test              # vitest — pricing, rules, normalisation, catalog, aquarium math
 ```
 
-There is no backend, no database and no environment configuration. V1 persists
-drafts, saved designs and submitted quote requests in `localStorage`.
+By default the app runs in **demo mode**: quote requests are saved in the
+visitor's browser and are never sent anywhere, and the UI says so. Point it at
+a Supabase project to run in **production mode**, where a request is only
+confirmed after the remote write succeeds — see
+[`docs/round2-productionization.md`](docs/round2-productionization.md) and
+[`.env.example`](.env.example).
+
+```bash
+cp .env.example .env.local   # then fill in the Supabase values for production
+```
 
 ### Static export
 
@@ -150,6 +158,20 @@ tests/                      vitest suites
 docs/                       implementation plan, product model, rules, assumptions
 ```
 
+### Modes and the quote pipeline
+
+| | Demo (default) | Production |
+| --- | --- | --- |
+| Repository | `LocalDemoQuoteRepository` | `RemoteQuoteRepository` (Supabase) |
+| Where a request goes | this browser only | `public.quote_requests` |
+| Success screen | "saved in this browser only… not sent to Nature Vibes" | shown only after the remote write is confirmed |
+| On failure | — | stays on the form, keeps the data, offers retry |
+
+`getQuoteRepository()` chooses from the build's configuration, and no component
+knows which implementation it got. Production is honoured only when Supabase
+credentials are present; otherwise the app falls back to demo rather than
+claiming a request was received.
+
 ### The four engines
 
 - **Catalog** (`src/data/catalog`) — every option is a `CatalogItem` with a
@@ -170,6 +192,16 @@ docs/                       implementation plan, product model, rules, assumptio
   `ok`, `warning`, `review_required`, `incompatible`. Only `incompatible` blocks
   the quote request; `review_required` never means "approved" and never means
   "blocked" either — it means a qualified professional has to sign it off.
+
+Services (delivery, maintenance, consultation, site visit) live in
+`data/catalog/services.ts` and are selected through a single
+`selectedServiceIds` list on the session. The review step and the quote form
+render the *same* picker, and pricing derives from the same list, so the
+estimate and the submitted request cannot diverge.
+
+The submission boundary (`domain/quotes/validation.ts`) re-runs the rules and
+**recomputes the total** rather than trusting the client, and is written as a
+pure function so it can be lifted server-side unchanged.
 
 ### The 3D layer
 
@@ -225,6 +257,8 @@ Full list with labels (Confirmed / Estimated / Assumption / Needs Measurement):
 | [`docs/product-model.md`](docs/product-model.md) | Configuration schema, catalog model, SKU conventions, pricing model |
 | [`docs/rules.md`](docs/rules.md) | Every rule, its code, severity and rationale |
 | [`docs/assumptions.md`](docs/assumptions.md) | Every placeholder and unverified value, with its status label |
+| [`docs/round2-productionization.md`](docs/round2-productionization.md) | The lead pipeline: repository abstraction, modes, database, security, deployment |
+| [`supabase/migrations/`](supabase/migrations/) | SQL schema, RLS policies and the public read-back function |
 
 ---
 
@@ -249,3 +283,18 @@ All verified in a headless browser run of the full journey:
 - [x] The quote form produces a structured request payload
 - [x] Success page shows a stable design reference
 - [x] No mockup number is presented as confirmed engineering data
+
+### Round 2 — production lead pipeline
+
+- [x] Existing configurator behaviour preserved; no redesign or rewrite
+- [x] Quote submission goes through a repository abstraction
+- [x] Production success appears only after confirmed remote persistence
+- [x] Demo mode states plainly that nothing was sent
+- [x] Refreshing Success restores the reference and the request
+- [x] Pricing and service selection are a single source of truth
+- [x] Service selection persists across refresh and saved-design load
+- [x] Environment cards preselect the clicked environment
+- [x] "Other" city captures an actual location
+- [x] Existing validation behaviour intact
+- [x] New tests cover the productionization changes (94 total)
+- [x] Documentation explains how to configure and deploy the backend

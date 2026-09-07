@@ -18,8 +18,22 @@ export const BRAND = {
   quoteResponseDays: "1–2 business days",
 } as const;
 
-/** Storage keys for the V1 localStorage persistence layer. */
+/**
+ * localStorage keys.
+ *
+ * v2 replaced the bare configuration draft with a session that also carries
+ * the service selection. The v1 keys are still read once, to migrate anyone
+ * who has data under them, and are never written to again — see
+ * `src/lib/persistence.ts`.
+ */
 export const STORAGE_KEYS = {
+  session: "nv.configurator.session.v2",
+  savedDesigns: "nv.configurator.designs.v2",
+  quotes: "nv.configurator.quotes.v2",
+} as const;
+
+/** Read-only, for migration. Never written to. */
+export const LEGACY_STORAGE_KEYS = {
   draft: "nv.configurator.draft.v1",
   savedDesigns: "nv.configurator.designs.v1",
   quotes: "nv.configurator.quotes.v1",

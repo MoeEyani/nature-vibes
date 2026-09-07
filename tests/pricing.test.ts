@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getItem } from "@/data/catalog";
-import {
-  calculatePrice,
-  groupLines,
-  INSTALLATION_RATE,
-} from "@/domain/pricing/calculatePrice";
+import { calculatePrice, groupLines } from "@/domain/pricing/calculatePrice";
+import { getService } from "@/data/catalog/services";
 import { derive } from "@/domain/configuration/derive";
 import { AQUARIUM_1200, configure } from "./helpers";
 
@@ -97,12 +94,47 @@ describe("pricing engine", () => {
   it("adds installation as a share of the product subtotal", () => {
     const config = configure();
     const base = calculatePrice(config);
-    const withInstall = calculatePrice(config, { includeInstallation: true });
+    const withInstall = calculatePrice(config, {
+      selectedServiceIds: ["SVC-DELIVERY"],
+    });
+
+    const pricing = getService("SVC-DELIVERY")!.pricing;
+    const rate = pricing.mode === "rateOfProductSubtotal" ? pricing.rate : 0;
 
     expect(withInstall.servicesSubtotal).toBe(
-      Math.round(base.productSubtotal * INSTALLATION_RATE),
+      Math.round(base.productSubtotal * rate),
     );
     expect(withInstall.total).toBe(base.productSubtotal + withInstall.servicesSubtotal);
+  });
+
+  it("prices only the services that were selected", () => {
+    const config = configure();
+    const none = calculatePrice(config, { selectedServiceIds: [] });
+    expect(none.servicesSubtotal).toBe(0);
+
+    const both = calculatePrice(config, {
+      selectedServiceIds: ["SVC-DELIVERY", "SVC-MAINTENANCE"],
+    });
+    expect(both.lines.filter((line) => line.group === "Services")).toHaveLength(2);
+  });
+
+  it("never charges the same service twice", () => {
+    const config = configure();
+    const once = calculatePrice(config, { selectedServiceIds: ["SVC-DELIVERY"] });
+    const duplicated = calculatePrice(config, {
+      selectedServiceIds: ["SVC-DELIVERY", "SVC-DELIVERY"],
+    });
+    expect(duplicated.total).toBe(once.total);
+    expect(duplicated.lines.filter((line) => line.group === "Services")).toHaveLength(1);
+  });
+
+  it("ignores unknown and quoted-separately services", () => {
+    const config = configure();
+    const base = calculatePrice(config, { selectedServiceIds: [] });
+    const withExtras = calculatePrice(config, {
+      selectedServiceIds: ["SVC-NOPE", "SVC-SITE-VISIT", "SVC-CONSULT"],
+    });
+    expect(withExtras.total).toBe(base.total);
   });
 
   it("is deterministic for the same configuration", () => {
@@ -111,7 +143,9 @@ describe("pricing engine", () => {
   });
 
   it("groups lines without losing any", () => {
-    const breakdown = calculatePrice(configure(), { includeInstallation: true });
+    const breakdown = calculatePrice(configure(), {
+      selectedServiceIds: ["SVC-DELIVERY"],
+    });
     const grouped = groupLines(breakdown).flatMap((group) => group.lines);
     expect(grouped.length).toBe(breakdown.lines.length);
   });

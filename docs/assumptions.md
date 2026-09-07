@@ -41,8 +41,9 @@ label changes by itself.
 | --- | --- | --- |
 | All catalog amounts (SAR) | **Assumption** | Invented seed values, chosen only to be plausible relative to each other |
 | Currency SAR | **Assumption** | From the reference imagery |
-| Installation at 12% of the product subtotal | **Assumption** | Placeholder rate |
-| Maintenance at 6% of the product subtotal per year | **Assumption** | Placeholder rate |
+| Installation at 12% of the product subtotal | **Assumption** | Placeholder rate, in `data/catalog/services.ts` |
+| Maintenance at 6% of the product subtotal per year | **Assumption** | Placeholder rate, in `data/catalog/services.ts` |
+| Consultation and site-visit pricing | **Not modelled** | Marked "quoted separately"; they carry no price |
 | Tax, discounts, region multipliers | **Not modelled** | Extension points exist in `PricingContext`; both fields are always 0 in V1 |
 | Species prices | **Assumption** | Nominal demo livestock allowance, not a real livestock quotation |
 

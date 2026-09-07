@@ -2,26 +2,27 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { APP_MODE, IS_DEMO, PRODUCTION_MISCONFIGURED } from "@/constants/appConfig";
 import { BRAND } from "@/constants/brand";
-import { quoteRequestSchema, type QuoteRequest } from "@/domain/configuration/schema";
-import { useConfiguratorStore, usePriceBreakdown, useValidation } from "@/store/useConfiguratorStore";
+import { quoteCustomerSchema } from "@/domain/configuration/schema";
+import { checkForSpam, HONEYPOT_FIELD } from "@/domain/quotes/antiSpam";
+import {
+  useConfiguratorStore,
+  usePriceBreakdown,
+  useValidation,
+} from "@/store/useConfiguratorStore";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import { Field, Select, TextArea, TextInput } from "@/components/ui/Field";
 import { cn } from "@/components/ui/cn";
+import { ServicesPicker } from "../ServicesPicker";
 import { SeverityBadge } from "../ValidationList";
 
-const CITIES = ["Riyadh", "Jeddah", "Dammam", "Khobar", "Makkah", "Madinah", "Other"];
-
-const SERVICES = [
-  { id: "SVC-DELIVERY", label: "Delivery & installation" },
-  { id: "SVC-MAINTENANCE", label: "Maintenance plan" },
-  { id: "SVC-CONSULT", label: "Customization consultation" },
-  { id: "SVC-SITE-VISIT", label: "Site visit & measurement" },
-];
+const CITIES = ["Riyadh", "Jeddah", "Dammam", "Khobar", "Makkah", "Madinah"];
+const OTHER_CITY = "__other__";
 
 type Tab = "save" | "quote";
 
@@ -31,6 +32,8 @@ export function QuoteStep() {
 
   return (
     <div className="space-y-6">
+      <ModeBanner />
+
       <div
         role="tablist"
         aria-label="Save or request a quote"
@@ -39,7 +42,10 @@ export function QuoteStep() {
         {(
           [
             { id: "save" as const, label: "Save your design" },
-            { id: "quote" as const, label: "Request a quote" },
+            {
+              id: "quote" as const,
+              label: IS_DEMO ? "Create demo request" : "Request a quote",
+            },
           ]
         ).map((entry) => (
           <button
@@ -60,8 +66,50 @@ export function QuoteStep() {
         ))}
       </div>
 
-      {tab === "save" ? <SavePanel /> : <QuoteForm onSubmitted={() => router.push("/design/success")} />}
+      {tab === "save" ? (
+        <SavePanel />
+      ) : (
+        <QuoteForm
+          onSubmitted={(reference) =>
+            router.push(`/design/success?ref=${encodeURIComponent(reference)}`)
+          }
+        />
+      )}
     </div>
+  );
+}
+
+/** States plainly which mode the build is in, and what that means. */
+function ModeBanner() {
+  if (PRODUCTION_MISCONFIGURED) {
+    return (
+      <Callout tone="danger" title="Demo mode — production was requested but is not configured">
+        This build asked for production mode, but no backend credentials are
+        present, so requests cannot be sent anywhere. It has fallen back to demo
+        mode rather than telling customers their request was received. Set{" "}
+        <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
+        <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>{" "}
+        to enable it.
+      </Callout>
+    );
+  }
+
+  if (IS_DEMO) {
+    return (
+      <Callout tone="warning" title="Demo mode">
+        This is a prototype. Anything you submit here is saved{" "}
+        <span className="font-medium text-ink">in this browser only</span> and is{" "}
+        <span className="font-medium text-ink">not sent to {BRAND.projectName}</span>.
+        Nobody will contact you.
+      </Callout>
+    );
+  }
+
+  return (
+    <Callout tone="ok" title="Your request will reach our team">
+      Submitting this form sends your design and contact details to{" "}
+      {BRAND.projectName}. We respond within {BRAND.quoteResponseDays}.
+    </Callout>
   );
 }
 
@@ -103,9 +151,9 @@ function SavePanel() {
         </Field>
 
         <Callout tone="info">
-          V1 saves designs in this browser only, using localStorage. There are no
-          accounts and nothing is sent to a server. Clearing your browser data
-          removes saved designs.
+          Saving keeps the design in this browser, using localStorage. There are
+          no accounts, and nothing is sent to a server. Your selected services
+          are saved with it, so reopening restores the same estimate.
         </Callout>
 
         <Button type="submit" size="lg" className="w-full sm:w-auto">
@@ -157,62 +205,92 @@ function SavePanel() {
   );
 }
 
-function QuoteForm({ onSubmitted }: { onSubmitted: () => void }) {
+function QuoteForm({ onSubmitted }: { onSubmitted: (reference: string) => void }) {
   const submitQuote = useConfiguratorStore((state) => state.submitQuote);
+  const selectedServiceIds = useConfiguratorStore((state) => state.selectedServiceIds);
   const breakdown = usePriceBreakdown();
   const validation = useValidation();
 
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [services, setServices] = useState<string[]>(["SVC-DELIVERY"]);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [payload, setPayload] = useState<QuoteRequest | null>(null);
+  const [cityChoice, setCityChoice] = useState(CITIES[0]);
+
+  // Used by the timing half of the anti-spam check.
+  const mountedAt = useRef(Date.now());
 
   const blocked = !validation.canRequestQuote;
+  const isOtherCity = cityChoice === OTHER_CITY;
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (blocked) return;
+    if (blocked || submitting) return;
 
     const form = new FormData(event.currentTarget);
+
+    const spam = checkForSpam({
+      honeypotValue: String(form.get(HONEYPOT_FIELD) ?? ""),
+      elapsedMs: Date.now() - mountedAt.current,
+    });
+    if (spam.spam) {
+      setSubmitError(
+        "That submission looked automated. Please take a moment and try again.",
+      );
+      return;
+    }
+
+    const city = isOtherCity
+      ? String(form.get("cityOther") ?? "")
+      : String(form.get("city") ?? "");
+
     const candidate = {
       fullName: String(form.get("fullName") ?? ""),
       email: String(form.get("email") ?? ""),
       phone: String(form.get("phone") ?? ""),
-      city: String(form.get("city") ?? ""),
+      city,
       preferredContact: String(form.get("preferredContact") ?? "email"),
       message: String(form.get("message") ?? "") || undefined,
+      consent: form.get("consent") === "on",
     };
 
-    const parsed = quoteRequestSchema.shape.customer.safeParse(candidate);
+    const parsed = quoteCustomerSchema.safeParse(candidate);
     if (!parsed.success) {
       const nextErrors: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
         const key = String(issue.path[0]);
         nextErrors[key] ??= issue.message;
       }
+      // The free-text field is what the customer actually sees for "Other".
+      if (isOtherCity && nextErrors.city) {
+        nextErrors.cityOther = nextErrors.city;
+      }
       setErrors(nextErrors);
+      setSubmitError(null);
       return;
     }
 
     setErrors({});
+    setSubmitError(null);
     setSubmitting(true);
 
-    // V1 has no backend. The structured payload is built and persisted
-    // locally; swapping in a real POST is a one-line change here.
-    const quote = submitQuote({
-      customer: parsed.data,
-      additionalServices: services,
-    });
-    setPayload(quote);
+    // Success is shown only after the repository confirms the write. On
+    // failure the form keeps everything the customer typed, so retry is free.
+    const result = await submitQuote({ customer: parsed.data });
+    setSubmitting(false);
 
-    window.setTimeout(() => {
-      setSubmitting(false);
-      onSubmitted();
-    }, 350);
+    if (result.ok) {
+      onSubmitted(result.reference);
+      return;
+    }
+    setSubmitError(
+      result.error.retryable
+        ? `${result.error.message} Your details are still here — press the button again to retry.`
+        : result.error.message,
+    );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+    <form onSubmit={handleSubmit} noValidate className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
       <div className="space-y-4 rounded-card border border-line bg-white p-5">
         <h3 className="font-display text-lg font-semibold text-ink">Your information</h3>
 
@@ -226,16 +304,37 @@ function QuoteForm({ onSubmitted }: { onSubmitted: () => void }) {
           <Field label="Phone number" required error={errors.phone}>
             <TextInput name="phone" type="tel" autoComplete="tel" placeholder="+966 5X XXX XXXX" />
           </Field>
-          <Field label="Installation city" required error={errors.city}>
-            <Select name="city" defaultValue="Riyadh">
+          <Field label="Installation city" required error={isOtherCity ? undefined : errors.city}>
+            <Select
+              name="city"
+              value={cityChoice}
+              onChange={(event) => setCityChoice(event.target.value)}
+            >
               {CITIES.map((city) => (
                 <option key={city} value={city}>
                   {city}
                 </option>
               ))}
+              <option value={OTHER_CITY}>Other…</option>
             </Select>
           </Field>
         </div>
+
+        {/* "Other" must capture a real location, not the word "Other". */}
+        {isOtherCity ? (
+          <Field
+            label="Which city or area?"
+            required
+            error={errors.cityOther ?? errors.city}
+            hint="Tell us where the pavilion will be installed."
+          >
+            <TextInput
+              name="cityOther"
+              autoComplete="address-level2"
+              placeholder="e.g. Abha, or a district name"
+            />
+          </Field>
+        ) : null}
 
         <Field label="Preferred contact method">
           <Select name="preferredContact" defaultValue="email">
@@ -246,29 +345,14 @@ function QuoteForm({ onSubmitted }: { onSubmitted: () => void }) {
         </Field>
 
         <fieldset>
-          <legend className="mb-2 text-sm font-medium text-ink">Additional services</legend>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {SERVICES.map((service) => (
-              <label
-                key={service.id}
-                className="flex items-center gap-2.5 rounded-lg border border-line px-3 py-2 text-sm text-ink"
-              >
-                <input
-                  type="checkbox"
-                  checked={services.includes(service.id)}
-                  onChange={() =>
-                    setServices((current) =>
-                      current.includes(service.id)
-                        ? current.filter((id) => id !== service.id)
-                        : [...current, service.id],
-                    )
-                  }
-                  className="size-4 accent-[var(--color-brand-green)]"
-                />
-                {service.label}
-              </label>
-            ))}
-          </div>
+          <legend className="mb-2 text-sm font-medium text-ink">
+            Additional services
+          </legend>
+          <ServicesPicker productSubtotal={breakdown.productSubtotal} />
+          <p className="mt-2 text-xs text-ink-subtle">
+            The estimate on the right updates with these — it always matches what
+            you submit.
+          </p>
         </fieldset>
 
         <Field label="Message" hint="Anything else we should know about the site or the design?">
@@ -278,11 +362,50 @@ function QuoteForm({ onSubmitted }: { onSubmitted: () => void }) {
           />
         </Field>
 
+        {/* Honeypot: hidden from people, tempting to naive bots. */}
+        <div aria-hidden className="hidden">
+          <label>
+            Company website
+            <input
+              type="text"
+              name={HONEYPOT_FIELD}
+              tabIndex={-1}
+              autoComplete="off"
+              defaultValue=""
+            />
+          </label>
+        </div>
+
+        <Field label="" error={errors.consent}>
+          <label className="flex items-start gap-2.5 text-sm text-ink-muted">
+            <input
+              type="checkbox"
+              name="consent"
+              className="mt-0.5 size-4 shrink-0 accent-[var(--color-brand-green)]"
+            />
+            <span>
+              {IS_DEMO ? (
+                <>
+                  I understand this is a demo and that nothing is sent to{" "}
+                  {BRAND.projectName}.
+                </>
+              ) : (
+                <>
+                  I agree that {BRAND.projectName} may store this design and
+                  contact me about it. We keep your name, email, phone, location
+                  and message for that purpose only, and do not sell or share
+                  them.
+                </>
+              )}
+            </span>
+          </label>
+        </Field>
+
         {blocked ? (
           <Callout tone="danger" title="Resolve the blocking issues first">
             {validation.blocking.length} selection
             {validation.blocking.length === 1 ? "" : "s"} in this design cannot be
-            built together. Go back to{" "}
+            built together. Go to{" "}
             <Link
               href="/design/validation"
               className="font-medium text-danger underline underline-offset-2"
@@ -293,12 +416,26 @@ function QuoteForm({ onSubmitted }: { onSubmitted: () => void }) {
           </Callout>
         ) : null}
 
+        {submitError ? (
+          <Callout tone="danger" title="Your request was not sent">
+            {submitError}
+          </Callout>
+        ) : null}
+
         <Button type="submit" size="lg" disabled={blocked || submitting} className="w-full sm:w-auto">
-          {submitting ? "Sending…" : "Send request"}
+          {submitting
+            ? IS_DEMO
+              ? "Saving…"
+              : "Sending…"
+            : IS_DEMO
+              ? "Create demo request"
+              : "Send request"}
         </Button>
 
         <p className="text-xs text-ink-subtle">
-          Our team reviews your design and responds within {BRAND.quoteResponseDays}.
+          {IS_DEMO
+            ? "Demo mode: the request is stored in this browser and is not sent to anyone."
+            : `Our team reviews your design and responds within ${BRAND.quoteResponseDays}.`}
         </p>
       </div>
 
@@ -316,37 +453,36 @@ function QuoteForm({ onSubmitted }: { onSubmitted: () => void }) {
               <dt className="text-ink-muted">Line items</dt>
               <dd className="tabular-nums text-ink">{breakdown.lines.length}</dd>
             </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-muted">Services</dt>
+              <dd className="tabular-nums text-ink">{selectedServiceIds.length}</dd>
+            </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-ink-muted">Validation</dt>
               <dd>
                 <SeverityBadge severity={validation.status} />
               </dd>
             </div>
-            <div className="flex justify-between gap-3">
-              <dt className="text-ink-muted">Price status</dt>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-ink-muted">Delivery</dt>
               <dd>
-                <Badge tone="warning">
-                  {breakdown.isEstimate ? "Placeholder" : "Confirmed"}
+                <Badge tone={IS_DEMO ? "warning" : "ok"}>
+                  {IS_DEMO ? "This browser only" : "Sent to our team"}
                 </Badge>
               </dd>
             </div>
           </dl>
           <p className="mt-3 text-xs leading-relaxed text-ink-subtle">
             The full configuration, price breakdown and validation results are
-            attached to the request as a structured payload.
+            attached to the request. Mode: <span className="font-mono">{APP_MODE}</span>.
           </p>
         </div>
 
-        {payload ? (
-          <details className="rounded-card border border-line bg-white p-5">
-            <summary className="cursor-pointer text-sm font-medium text-ink">
-              Quote request payload
-            </summary>
-            <pre className="nv-scroll mt-3 max-h-72 overflow-auto rounded-lg bg-deep-green p-3 text-[10px] leading-relaxed text-cream">
-              {JSON.stringify(payload, null, 2)}
-            </pre>
-          </details>
-        ) : null}
+        <Callout tone="info" title="A design review is not an approval">
+          Anything marked Engineering Review Required stays open until a
+          qualified professional signs it off. Sending this request starts that
+          conversation; it does not resolve it.
+        </Callout>
       </aside>
     </form>
   );

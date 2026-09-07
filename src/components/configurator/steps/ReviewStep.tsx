@@ -4,16 +4,14 @@ import { DISCLAIMERS } from "@/constants/brand";
 import { useConfiguratorStore, usePriceBreakdown, useValidation } from "@/store/useConfiguratorStore";
 import { Callout } from "@/components/ui/Callout";
 import { Section } from "@/components/ui/Section";
-import { Toggle } from "@/components/ui/Field";
 import { Viewport } from "@/components/three/Viewport";
 import { ConfigurationSummary, SkuList } from "../ConfigurationSummary";
 import { PriceBreakdownTable } from "../PricePanel";
+import { ServicesPicker } from "../ServicesPicker";
 import { SeverityBadge } from "../ValidationList";
 
 export function ReviewStep() {
   const config = useConfiguratorStore((state) => state.config);
-  const pricingContext = useConfiguratorStore((state) => state.pricingContext);
-  const setPricingContext = useConfiguratorStore((state) => state.setPricingContext);
   const breakdown = usePriceBreakdown();
   const validation = useValidation();
 
@@ -37,19 +35,13 @@ export function ReviewStep() {
         title="Estimated price breakdown"
         description="Every line traces back to a catalog item, its price status and how its quantity was derived."
       >
-        <div className="mb-3 grid gap-3 sm:grid-cols-2">
-          <Toggle
-            checked={Boolean(pricingContext.includeInstallation)}
-            onChange={(includeInstallation) => setPricingContext({ includeInstallation })}
-            label="Include delivery & installation"
-            description="Placeholder rate applied to the product subtotal."
-          />
-          <Toggle
-            checked={Boolean(pricingContext.includeMaintenance)}
-            onChange={(includeMaintenance) => setPricingContext({ includeMaintenance })}
-            label="Include annual maintenance"
-            description="Placeholder rate, charged per year."
-          />
+        <div className="mb-4">
+          <h4 className="mb-2 text-sm font-medium text-ink">Services</h4>
+          <ServicesPicker productSubtotal={breakdown.productSubtotal} />
+          <p className="mt-2 text-xs text-ink-subtle">
+            These are the same services the quote form submits — changing them
+            here changes both the estimate and your request.
+          </p>
         </div>
 
         <PriceBreakdownTable breakdown={breakdown} />

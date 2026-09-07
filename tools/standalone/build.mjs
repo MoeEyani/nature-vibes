@@ -14,6 +14,12 @@
  *      is used unchanged.
  *   3. Both are inlined into one HTML document.
  *
+ * Environment: the app reads `process.env.NEXT_PUBLIC_*`, which Next.js inlines
+ * at build time. esbuild does not do that on its own, so every variable the app
+ * reads is declared in PUBLIC_ENV_KEYS below and inlined here. A variable the
+ * app starts reading must be added there, or the bundle will throw
+ * "process is not defined" at runtime.
+ *
  * Usage:
  *   node tools/standalone/build.mjs [outfile]
  *   node tools/standalone/build.mjs [outfile] --fragment
@@ -27,6 +33,15 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+/** Every NEXT_PUBLIC_* variable the application reads. Keep in sync with .env.example. */
+const PUBLIC_ENV_KEYS = [
+  "NEXT_PUBLIC_APP_MODE",
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  "NEXT_PUBLIC_NOTIFY_WEBHOOK_URL",
+  "NEXT_PUBLIC_BASE_PATH",
+];
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -65,7 +80,17 @@ const result = await build({
   write: false,
   plugins: [nextShimPlugin],
   loader: { ".svg": "dataurl" },
-  define: { "process.env.NODE_ENV": '"production"' },
+  define: {
+    "process.env.NODE_ENV": '"production"',
+    ...Object.fromEntries(
+      PUBLIC_ENV_KEYS.map((key) => [
+        `process.env.${key}`,
+        JSON.stringify(process.env[key] ?? ""),
+      ]),
+    ),
+    // Catch-all so an unlisted lookup yields undefined rather than throwing.
+    "process.env": "{}",
+  },
   alias: { "@": path.join(root, "src") },
   logLevel: "warning",
 });

@@ -1,24 +1,34 @@
 "use client";
 
 import { create } from "zustand";
-import { STORAGE_KEYS } from "@/constants/brand";
+import { APP_MODE, QUOTE_SOURCE } from "@/constants/appConfig";
 import { getItem, meta } from "@/data/catalog";
-import {
-  createDefaultConfiguration,
-  DEFAULT_AQUARIUM,
-} from "@/data/seed/defaultConfiguration";
+import { normalizeServiceIds } from "@/data/catalog/services";
+import { DEFAULT_AQUARIUM } from "@/data/seed/defaultConfiguration";
 import { normalizeConfiguration } from "@/domain/configuration/normalize";
 import {
-  designConfigurationSchema,
-  savedDesignSchema,
+  QUOTE_SCHEMA_VERSION,
   type DesignConfiguration,
+  type QuoteCustomer,
   type QuoteRequest,
   type SavedDesign,
 } from "@/domain/configuration/schema";
-import { calculatePrice, type PricingContext } from "@/domain/pricing/calculatePrice";
+import { calculatePrice } from "@/domain/pricing/calculatePrice";
 import { evaluateConfiguration } from "@/domain/rules/evaluateConfiguration";
+import {
+  getQuoteRepository,
+  notifyTeam,
+  type QuoteSubmissionResult,
+} from "@/domain/quotes";
 import { createDesignReference } from "@/lib/id";
-import { readJson, removeKey, writeJson } from "@/lib/storage";
+import {
+  clearSession,
+  createDefaultSession,
+  loadSavedDesigns,
+  loadSession,
+  saveSavedDesigns,
+  saveSession,
+} from "@/lib/persistence";
 
 /**
  * The single configurator store.
@@ -32,12 +42,16 @@ type Updater = (config: DesignConfiguration) => void;
 
 export type ConfiguratorState = {
   config: DesignConfiguration;
-  /** True once a stored draft has been restored (or found absent). */
+  /** True once a stored session has been restored (or found absent). */
   hydrated: boolean;
   /** Reference assigned when the design is saved or quoted. */
   reference: string | null;
-  /** Optional services included in the price estimate. */
-  pricingContext: PricingContext;
+  /**
+   * The single source of truth for services. Review and the quote form both
+   * read and write this list, and pricing is derived from it, so the estimate
+   * always matches what is submitted.
+   */
+  selectedServiceIds: string[];
   savedDesigns: SavedDesign[];
   lastQuote: QuoteRequest | null;
   /** Steps the customer has visited, used by the stepper. */
@@ -72,7 +86,8 @@ export type ConfiguratorState = {
   togglePlant: (plantId: string) => void;
   toggleAddon: (addonId: string) => void;
 
-  setPricingContext: (context: Partial<PricingContext>) => void;
+  toggleService: (serviceId: string) => void;
+  setServices: (serviceIds: string[]) => void;
 
   /** Satisfy an unmet item requirement by adding the missing item. */
   resolveRequirement: (requirementId: string) => void;
@@ -80,9 +95,18 @@ export type ConfiguratorState = {
   saveDesign: (input: { name: string; description?: string }) => SavedDesign;
   loadDesign: (reference: string) => boolean;
   deleteDesign: (reference: string) => void;
-  submitQuote: (
-    request: Omit<QuoteRequest, "reference" | "submittedAt" | "configuration" | "pricing" | "validation">,
-  ) => QuoteRequest;
+  /**
+   * Build the immutable snapshot and hand it to the repository.
+   *
+   * Resolves only once the write is confirmed. In production that means the
+   * remote row exists; the caller must not show success before this resolves
+   * with `ok: true`.
+   */
+  submitQuote: (input: {
+    customer: QuoteCustomer;
+  }) => Promise<QuoteSubmissionResult>;
+  /** Re-attach a reference restored from the URL on the success screen. */
+  adoptReference: (reference: string) => void;
   startNewDesign: () => void;
 };
 
@@ -91,14 +115,28 @@ function nowIso(): string {
 }
 
 export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
-  /** Apply a mutation, normalise, stamp `updatedAt` and persist the draft. */
+  /** Persist the parts of state that make up the durable session. */
+  function persist(state: {
+    config: DesignConfiguration;
+    selectedServiceIds: string[];
+    reference: string | null;
+  }): void {
+    saveSession({
+      schemaVersion: 2,
+      configuration: state.config,
+      selectedServiceIds: state.selectedServiceIds,
+      reference: state.reference,
+    });
+  }
+
+  /** Apply a mutation, normalise, stamp `updatedAt` and persist the session. */
   function apply(updater: Updater): void {
     set((state) => {
       const draft = structuredClone(state.config);
       updater(draft);
       draft.updatedAt = nowIso();
       const config = normalizeConfiguration(draft);
-      writeJson(STORAGE_KEYS.draft, config);
+      persist({ ...state, config });
       return { config };
     });
   }
@@ -108,10 +146,10 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
   }
 
   return {
-    config: createDefaultConfiguration(),
+    config: createDefaultSession().configuration,
     hydrated: false,
     reference: null,
-    pricingContext: { includeInstallation: true },
+    selectedServiceIds: createDefaultSession().selectedServiceIds,
     savedDesigns: [],
     lastQuote: null,
     visited: [],
@@ -119,21 +157,16 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
     hydrate() {
       if (get().hydrated) return;
 
-      const storedDraft = readJson<unknown>(STORAGE_KEYS.draft);
-      const parsedDraft = designConfigurationSchema.safeParse(storedDraft);
-
-      const storedDesigns = readJson<unknown[]>(STORAGE_KEYS.savedDesigns) ?? [];
-      const savedDesigns = storedDesigns
-        .map((entry) => savedDesignSchema.safeParse(entry))
-        .filter((result) => result.success)
-        .map((result) => result.data);
+      // Migrates v1 data on the way through — see lib/persistence.ts.
+      const { session } = loadSession();
+      const { designs } = loadSavedDesigns();
 
       set({
         hydrated: true,
-        savedDesigns,
-        ...(parsedDraft.success
-          ? { config: normalizeConfiguration(parsedDraft.data) }
-          : {}),
+        savedDesigns: designs,
+        config: session.configuration,
+        selectedServiceIds: session.selectedServiceIds,
+        reference: session.reference,
       });
     },
 
@@ -292,8 +325,24 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
       });
     },
 
-    setPricingContext(context) {
-      set((state) => ({ pricingContext: { ...state.pricingContext, ...context } }));
+    toggleService(serviceId) {
+      set((state) => {
+        const selectedServiceIds = normalizeServiceIds(
+          state.selectedServiceIds.includes(serviceId)
+            ? state.selectedServiceIds.filter((id) => id !== serviceId)
+            : [...state.selectedServiceIds, serviceId],
+        );
+        persist({ ...state, selectedServiceIds });
+        return { selectedServiceIds };
+      });
+    },
+
+    setServices(serviceIds) {
+      set((state) => {
+        const selectedServiceIds = normalizeServiceIds(serviceIds);
+        persist({ ...state, selectedServiceIds });
+        return { selectedServiceIds };
+      });
     },
 
     resolveRequirement(requirementId) {
@@ -324,7 +373,8 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
     saveDesign({ name, description }) {
       const state = get();
       const config = state.config;
-      const breakdown = calculatePrice(config, state.pricingContext);
+      const selectedServiceIds = state.selectedServiceIds;
+      const breakdown = calculatePrice(config, { selectedServiceIds });
       const validation = evaluateConfiguration(config);
 
       const reference = state.reference ?? createDesignReference();
@@ -334,6 +384,8 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
         name: name.trim() || `${config.pavilion.familyId} design`,
         description: description?.trim() || undefined,
         configuration: { ...config, name: name.trim() || undefined },
+        // Saved with the design, so reopening restores the same estimate.
+        selectedServiceIds: [...selectedServiceIds],
         estimatedTotal: breakdown.total,
         validationStatus: validation.status,
       };
@@ -343,9 +395,9 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
         ...state.savedDesigns.filter((entry) => entry.reference !== reference),
       ];
 
-      writeJson(STORAGE_KEYS.savedDesigns, savedDesigns);
+      saveSavedDesigns(savedDesigns);
       set({ savedDesigns, reference, config: design.configuration });
-      writeJson(STORAGE_KEYS.draft, design.configuration);
+      persist({ config: design.configuration, selectedServiceIds, reference });
 
       return design;
     },
@@ -355,8 +407,9 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
       if (!design) return false;
 
       const config = normalizeConfiguration(design.configuration);
-      writeJson(STORAGE_KEYS.draft, config);
-      set({ config, reference: design.reference });
+      const selectedServiceIds = normalizeServiceIds(design.selectedServiceIds);
+      persist({ config, selectedServiceIds, reference: design.reference });
+      set({ config, selectedServiceIds, reference: design.reference });
       return true;
     },
 
@@ -364,22 +417,27 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
       const savedDesigns = get().savedDesigns.filter(
         (entry) => entry.reference !== reference,
       );
-      writeJson(STORAGE_KEYS.savedDesigns, savedDesigns);
+      saveSavedDesigns(savedDesigns);
       set({ savedDesigns });
     },
 
-    submitQuote(input) {
+    async submitQuote({ customer }) {
       const state = get();
       const config = state.config;
-      const breakdown = calculatePrice(config, state.pricingContext);
+      // The services priced here are exactly the ones submitted below.
+      const selectedServiceIds = normalizeServiceIds(state.selectedServiceIds);
+      const breakdown = calculatePrice(config, { selectedServiceIds });
       const validation = evaluateConfiguration(config);
       const reference = state.reference ?? createDesignReference();
 
       const quote: QuoteRequest = {
         reference,
         submittedAt: nowIso(),
-        customer: input.customer,
-        additionalServices: input.additionalServices,
+        schemaVersion: QUOTE_SCHEMA_VERSION,
+        status: "new",
+        source: `${QUOTE_SOURCE}:${APP_MODE}`,
+        customer,
+        additionalServices: selectedServiceIds,
         configuration: config,
         pricing: {
           estimatedTotal: breakdown.total,
@@ -389,19 +447,35 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
         validation: { status: validation.status, messages: validation.messages },
       };
 
-      // V1 has no backend: the structured payload is persisted locally so it
-      // can be inspected, exported and later POSTed to a real endpoint.
-      const existing = readJson<QuoteRequest[]>(STORAGE_KEYS.quotes) ?? [];
-      writeJson(STORAGE_KEYS.quotes, [quote, ...existing]);
+      const result = await getQuoteRepository().submit(quote);
+      // Nothing is recorded as sent unless the write was confirmed. The caller
+      // stays on the quote screen and can retry with the form intact.
+      if (!result.ok) return result;
 
-      set({ lastQuote: quote, reference });
-      return quote;
+      const confirmed: QuoteRequest = { ...quote, reference: result.reference };
+      set({ lastQuote: confirmed, reference: confirmed.reference });
+      persist({ config, selectedServiceIds, reference: confirmed.reference });
+
+      // The lead is already durable; a failed notification must not undo it.
+      void notifyTeam(confirmed);
+
+      return result;
+    },
+
+    adoptReference(reference) {
+      set((state) => {
+        if (state.reference === reference) return state;
+        persist({ ...state, reference });
+        return { reference };
+      });
     },
 
     startNewDesign() {
-      removeKey(STORAGE_KEYS.draft);
+      clearSession();
+      const session = createDefaultSession();
       set({
-        config: createDefaultConfiguration(),
+        config: session.configuration,
+        selectedServiceIds: session.selectedServiceIds,
         reference: null,
         lastQuote: null,
         visited: [],
@@ -410,11 +484,16 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
   };
 });
 
-/** Selector helper: the current price breakdown. */
+/**
+ * Selector helper: the current price breakdown.
+ *
+ * Derived from the same `selectedServiceIds` the quote form submits, which is
+ * what guarantees the estimate and the request can never diverge.
+ */
 export function usePriceBreakdown() {
   const config = useConfiguratorStore((state) => state.config);
-  const pricingContext = useConfiguratorStore((state) => state.pricingContext);
-  return calculatePrice(config, pricingContext);
+  const selectedServiceIds = useConfiguratorStore((state) => state.selectedServiceIds);
+  return calculatePrice(config, { selectedServiceIds });
 }
 
 /** Selector helper: the current validation result. */

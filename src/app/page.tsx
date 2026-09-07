@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BRAND } from "@/constants/brand";
 import { ENVIRONMENTS } from "@/data/catalog";
+import { environmentHref } from "@/domain/configuration/environmentParam";
 import { ButtonLink } from "@/components/ui/Button";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { SiteHeader } from "@/components/layout/SiteHeader";
@@ -42,7 +43,9 @@ export default function HomePage() {
                   {ENVIRONMENTS.filter((item) => item.status === "active").map((item) => (
                     <Link
                       key={item.id}
-                      href="/design/location"
+                      // Carries the choice into the wizard so the card the
+                      // customer clicked arrives already selected.
+                      href={environmentHref(item.id)}
                       className="group rounded-card border border-cream/15 bg-white/5 p-4 transition-colors hover:border-cream/40 hover:bg-white/10"
                     >
                       <span className="block font-medium">{item.name}</span>

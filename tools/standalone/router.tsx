@@ -16,10 +16,20 @@ import { useCallback, useEffect, useSyncExternalStore, type ReactNode } from "re
 
 const listeners = new Set<() => void>();
 
-function currentPath(): string {
+/** The hash route, including any query string: `/design/success?ref=NV-…`. */
+function currentRoute(): string {
   if (typeof window === "undefined") return "/";
   const hash = window.location.hash.replace(/^#/, "");
   return hash.startsWith("/") ? hash : "/";
+}
+
+function currentPath(): string {
+  return currentRoute().split("?")[0];
+}
+
+function currentQuery(): string {
+  const [, query = ""] = currentRoute().split("?");
+  return query;
 }
 
 function subscribe(listener: () => void): () => void {
@@ -35,6 +45,18 @@ if (typeof window !== "undefined") {
 
 export function usePathname(): string {
   return useSyncExternalStore(subscribe, currentPath, () => "/");
+}
+
+/**
+ * Query parameters carried on the hash route.
+ *
+ * The app uses these for `?environment=` preselection and `?ref=` success
+ * restoration, so the standalone build has to support them properly rather
+ * than returning an empty set.
+ */
+export function useSearchParams(): URLSearchParams {
+  const query = useSyncExternalStore(subscribe, currentQuery, () => "");
+  return new URLSearchParams(query);
 }
 
 function navigate(href: string, replace: boolean): void {
@@ -63,10 +85,6 @@ export function redirect(href: string): never {
 
 export function notFound(): never {
   throw new Error("not found");
-}
-
-export function useSearchParams(): URLSearchParams {
-  return new URLSearchParams();
 }
 
 type LinkProps = {

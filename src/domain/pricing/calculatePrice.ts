@@ -4,6 +4,7 @@ import type { DesignConfiguration } from "@/domain/configuration/schema";
 import { derive, type DerivedConfiguration } from "@/domain/configuration/derive";
 import { PLANTERS } from "@/data/catalog/plants";
 import { meta } from "@/data/catalog";
+import { getService, normalizeServiceIds } from "@/data/catalog/services";
 
 /**
  * Pricing engine.
@@ -41,15 +42,16 @@ export type PriceGroup =
   | "Services";
 
 /**
- * Extension points for V2. Kept in the input so installation, delivery,
- * regional pricing, discounts and tax can be added without changing the
- * shape of the result.
+ * Pricing inputs that are not part of the physical configuration.
+ *
+ * `selectedServiceIds` is the single source of truth for services: the review
+ * step, the quote form and this engine all read the same list, so the
+ * estimated total always corresponds exactly to the services submitted.
+ * Region multipliers, discounts and tax remain extension points for V2.
  */
 export type PricingContext = {
-  /** Delivery & installation, priced as a share of the product subtotal. */
-  includeInstallation?: boolean;
-  /** Annual maintenance package. */
-  includeMaintenance?: boolean;
+  /** Ids from the service catalog. Unknown ids are ignored. */
+  selectedServiceIds?: readonly string[];
   /** Reserved: region multiplier, discounts and tax are not modelled in V1. */
   regionId?: string;
   discountCode?: string;
@@ -69,11 +71,6 @@ export type PriceBreakdown = {
   tax: number;
   discount: number;
 };
-
-/** Delivery & installation as a share of the product subtotal. Placeholder. */
-export const INSTALLATION_RATE = 0.12;
-/** Annual maintenance package as a share of the product subtotal. Placeholder. */
-export const MAINTENANCE_RATE = 0.06;
 
 const GROUP_BY_CATEGORY: Record<string, PriceGroup> = {
   pavilion: "Pavilion",
@@ -217,32 +214,26 @@ export function calculatePrice(
 
   const productSubtotal = lines.reduce((sum, line) => sum + line.subtotal, 0);
 
-  // Services are derived from the product subtotal rather than the catalog.
+  // Service lines come from the same selection the quote form submits.
+  // De-duplicating here is what stops a service being charged twice.
   const serviceLines: PriceLine[] = [];
-  if (context.includeInstallation) {
+  for (const serviceId of normalizeServiceIds(context.selectedServiceIds ?? [])) {
+    const service = getService(serviceId);
+    if (!service || service.pricing.mode !== "rateOfProductSubtotal") continue;
+
+    const amount = Math.round(productSubtotal * service.pricing.rate);
     serviceLines.push({
-      itemId: "SVC-INSTALL",
-      description: "Delivery & installation",
+      itemId: service.id,
+      description: service.name,
       group: "Services",
       quantity: 1,
-      unit: "service",
-      unitPrice: Math.round(productSubtotal * INSTALLATION_RATE),
-      subtotal: Math.round(productSubtotal * INSTALLATION_RATE),
-      priceStatus: "placeholder",
-      note: `Placeholder rate: ${Math.round(INSTALLATION_RATE * 100)}% of the product subtotal.`,
-    });
-  }
-  if (context.includeMaintenance) {
-    serviceLines.push({
-      itemId: "SVC-MAINTENANCE",
-      description: "Annual maintenance package",
-      group: "Services",
-      quantity: 1,
-      unit: "year",
-      unitPrice: Math.round(productSubtotal * MAINTENANCE_RATE),
-      subtotal: Math.round(productSubtotal * MAINTENANCE_RATE),
-      priceStatus: "placeholder",
-      note: `Placeholder rate: ${Math.round(MAINTENANCE_RATE * 100)}% of the product subtotal per year.`,
+      unit: service.pricing.unit,
+      unitPrice: amount,
+      subtotal: amount,
+      priceStatus: service.pricing.status,
+      note: `Placeholder rate: ${Math.round(
+        service.pricing.rate * 100,
+      )}% of the product subtotal.`,
     });
   }
 
