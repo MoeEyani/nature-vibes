@@ -3,10 +3,17 @@ project: Nature Vibes
 document_type: Round 2 — Production Lead Pipeline
 version: 1.0
 date: 2026-09-07
-status: Delivered
+status: Delivered — partly superseded by Round 2.1
 ---
 
 # Round 2 — Production Lead Pipeline
+
+> **Superseded in places by Round 2.1.** Quote creation no longer goes from the
+> browser to Supabase directly: it goes through the `submit-quote` Edge
+> Function, anonymous INSERT is revoked, and the notification webhook is a
+> server secret rather than a `NEXT_PUBLIC_*` variable. Where this document and
+> [`round2.1-production-boundary.md`](round2.1-production-boundary.md)
+> disagree, 2.1 is current.
 
 Round 1 built a working configurator whose quote flow was a demo: the UI said
 “Your request is in” while the payload went into `localStorage`. Round 2 makes

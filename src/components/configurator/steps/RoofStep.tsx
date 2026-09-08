@@ -1,6 +1,6 @@
 "use client";
 
-import { ROOFS } from "@/data/catalog";
+import { ROOFS } from "@shared/catalog";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
 import { OptionCard } from "@/components/ui/OptionCard";
 import { OptionGrid, Section } from "@/components/ui/Section";

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { IS_DEMO } from "@/constants/appConfig";
 import { BRAND } from "@/constants/brand";
-import type { QuoteRecord } from "@/domain/configuration/schema";
+import type { QuoteRecord } from "@shared/configuration/schema";
 import { getQuoteRepository } from "@/domain/quotes";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
 import { formatCurrency, formatDate } from "@/lib/format";

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { getItem } from "@/data/catalog";
-import { calculatePrice, groupLines } from "@/domain/pricing/calculatePrice";
-import { getService } from "@/data/catalog/services";
-import { derive } from "@/domain/configuration/derive";
+import { getItem } from "@shared/catalog";
+import { calculatePrice, groupLines } from "@shared/pricing/calculatePrice";
+import { getService } from "@shared/catalog/services";
+import { derive } from "@shared/configuration/derive";
 import { AQUARIUM_1200, configure } from "./helpers";
 
 describe("pricing engine", () => {

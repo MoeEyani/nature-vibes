@@ -1,8 +1,8 @@
 "use client";
 
-import { PLANTERS, PLANTS, getItem, meta } from "@/data/catalog";
+import { PLANTERS, PLANTS, getItem, meta } from "@shared/catalog";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
-import { isRequirementMet, requirementLabel } from "@/domain/configuration/derive";
+import { isRequirementMet, requirementLabel } from "@shared/configuration/derive";
 import { DISCLAIMERS } from "@/constants/brand";
 import { Badge } from "@/components/ui/Badge";
 import { Callout } from "@/components/ui/Callout";

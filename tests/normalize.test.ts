@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeConfiguration } from "@/domain/configuration/normalize";
+import { normalizeConfiguration } from "@shared/configuration/normalize";
 import { AQUARIUM_1200, configure } from "./helpers";
 
 describe("configuration normalisation", () => {

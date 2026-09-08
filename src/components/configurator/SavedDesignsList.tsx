@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { itemName } from "@/data/catalog";
+import { itemName } from "@shared/catalog";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
 import { formatCurrency, formatDate, formatFootprint } from "@/lib/format";
 import { Button, ButtonLink } from "@/components/ui/Button";

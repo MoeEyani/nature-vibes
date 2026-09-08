@@ -2,8 +2,8 @@
 
 import dynamic from "next/dynamic";
 import { useRef, useState } from "react";
-import type { DesignConfiguration } from "@/domain/configuration/schema";
-import { derive } from "@/domain/configuration/derive";
+import type { DesignConfiguration } from "@shared/configuration/schema";
+import { derive } from "@shared/configuration/derive";
 import { formatFootprint, formatLitres } from "@/lib/format";
 import { cn } from "@/components/ui/cn";
 import { ALL_LAYERS, type LayerVisibility, type OrbitControlsHandle } from "./Scene";

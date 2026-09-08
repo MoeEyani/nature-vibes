@@ -1,4 +1,4 @@
-import type { DesignConfiguration } from "@/domain/configuration/schema";
+import type { DesignConfiguration } from "@shared/configuration/schema";
 
 export type StepId =
   | "location"

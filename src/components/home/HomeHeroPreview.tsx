@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { createDefaultConfiguration } from "@/data/seed/defaultConfiguration";
-import { normalizeConfiguration } from "@/domain/configuration/normalize";
+import { createDefaultConfiguration } from "@shared/seed/defaultConfiguration";
+import { normalizeConfiguration } from "@shared/configuration/normalize";
 import { Viewport } from "@/components/three/Viewport";
 
 /**

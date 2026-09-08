@@ -1,6 +1,6 @@
 "use client";
 
-import { SERVICES } from "@/data/catalog/services";
+import { SERVICES } from "@shared/catalog/services";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
 import { formatCurrency } from "@/lib/format";
 import { Badge } from "@/components/ui/Badge";

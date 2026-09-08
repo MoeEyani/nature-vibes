@@ -1,8 +1,8 @@
 "use client";
 
-import { FABRICS, SEATING_LAYOUTS, SEATING_STYLES, getItem, meta } from "@/data/catalog";
+import { FABRICS, SEATING_LAYOUTS, SEATING_STYLES, getItem, meta } from "@shared/catalog";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
-import { derive } from "@/domain/configuration/derive";
+import { derive } from "@shared/configuration/derive";
 import { Callout } from "@/components/ui/Callout";
 import { OptionCard } from "@/components/ui/OptionCard";
 import { SwatchOption } from "@/components/ui/SwatchOption";

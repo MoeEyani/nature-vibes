@@ -39,7 +39,7 @@ const PUBLIC_ENV_KEYS = [
   "NEXT_PUBLIC_APP_MODE",
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  "NEXT_PUBLIC_NOTIFY_WEBHOOK_URL",
+  "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
   "NEXT_PUBLIC_BASE_PATH",
 ];
 
@@ -91,7 +91,10 @@ const result = await build({
     // Catch-all so an unlisted lookup yields undefined rather than throwing.
     "process.env": "{}",
   },
-  alias: { "@": path.join(root, "src") },
+  alias: {
+    "@shared": path.join(root, "shared"),
+    "@": path.join(root, "src"),
+  },
   logLevel: "warning",
 });
 const js = result.outputFiles[0].text;

@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { CatalogItem } from "@/types/catalog";
+import type { CatalogItem } from "@shared/types/catalog";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "./cn";
 import { Badge } from "./Badge";

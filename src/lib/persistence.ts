@@ -1,14 +1,14 @@
 import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/constants/brand";
-import { DEFAULT_SERVICE_IDS, normalizeServiceIds } from "@/data/catalog/services";
-import { createDefaultConfiguration } from "@/data/seed/defaultConfiguration";
-import { normalizeConfiguration } from "@/domain/configuration/normalize";
+import { DEFAULT_SERVICE_IDS, normalizeServiceIds } from "@shared/catalog/services";
+import { createDefaultConfiguration } from "@shared/seed/defaultConfiguration";
+import { normalizeConfiguration } from "@shared/configuration/normalize";
 import {
   designConfigurationSchema,
   designSessionSchema,
   savedDesignSchema,
   type DesignSession,
   type SavedDesign,
-} from "@/domain/configuration/schema";
+} from "@shared/configuration/schema";
 import { readJson, removeKey, writeJson } from "@/lib/storage";
 
 /**

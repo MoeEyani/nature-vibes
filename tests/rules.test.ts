@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateConfiguration, groupChecks } from "@/domain/rules/evaluateConfiguration";
+import { evaluateConfiguration, groupChecks } from "@shared/rules/evaluateConfiguration";
 import { AQUARIUM_1200, configure } from "./helpers";
 
 const codes = (config: Parameters<typeof evaluateConfiguration>[0]) =>

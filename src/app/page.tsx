@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BRAND } from "@/constants/brand";
-import { ENVIRONMENTS } from "@/data/catalog";
-import { environmentHref } from "@/domain/configuration/environmentParam";
+import { ENVIRONMENTS } from "@shared/catalog";
+import { environmentHref } from "@shared/configuration/environmentParam";
 import { ButtonLink } from "@/components/ui/Button";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { SiteHeader } from "@/components/layout/SiteHeader";

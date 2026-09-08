@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { ValidationMessage, ValidationSeverity } from "@/domain/configuration/schema";
-import { SEVERITY_LABEL } from "@/domain/rules/types";
+import type { ValidationMessage, ValidationSeverity } from "@shared/configuration/schema";
+import { SEVERITY_LABEL } from "@shared/rules/types";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/components/ui/cn";
 

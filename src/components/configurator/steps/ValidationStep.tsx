@@ -1,8 +1,8 @@
 "use client";
 
 import { useConfiguratorStore, useValidation } from "@/store/useConfiguratorStore";
-import { groupChecks } from "@/domain/rules/evaluateConfiguration";
-import { SEVERITY_LABEL } from "@/domain/rules/types";
+import { groupChecks } from "@shared/rules/evaluateConfiguration";
+import { SEVERITY_LABEL } from "@shared/rules/types";
 import { Callout } from "@/components/ui/Callout";
 import { cn } from "@/components/ui/cn";
 import { SeverityBadge, ValidationMessageCard } from "../ValidationList";

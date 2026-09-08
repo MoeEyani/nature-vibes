@@ -1,7 +1,7 @@
 "use client";
 
-import type { CatalogItem } from "@/types/catalog";
-import { meta } from "@/data/catalog";
+import type { CatalogItem } from "@shared/types/catalog";
+import { meta } from "@shared/catalog";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "./cn";
 

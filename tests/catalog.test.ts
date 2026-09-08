@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CATALOG, findDuplicateIds, getItem } from "@/data/catalog";
+import { CATALOG, findDuplicateIds, getItem } from "@shared/catalog";
 
 describe("catalog seed data", () => {
   it("has no duplicate ids", () => {

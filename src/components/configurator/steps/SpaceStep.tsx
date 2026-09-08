@@ -1,9 +1,9 @@
 "use client";
 
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
-import { derive, METRES_PER_SEAT } from "@/domain/configuration/derive";
-import { SIZE_PRESETS } from "@/data/catalog/pavilions";
-import { meta } from "@/data/catalog";
+import { derive, METRES_PER_SEAT } from "@shared/configuration/derive";
+import { SIZE_PRESETS } from "@shared/catalog/pavilions";
+import { meta } from "@shared/catalog";
 import { Callout } from "@/components/ui/Callout";
 import { DimensionField, Field, TextInput } from "@/components/ui/Field";
 import { Section } from "@/components/ui/Section";

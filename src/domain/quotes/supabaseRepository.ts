@@ -1,29 +1,26 @@
+import type { PublicQuoteSubmission } from "@shared/boundary/publicSubmission";
 import {
   quoteRecordSchema,
   type QuoteRecord,
-  type QuoteRequest,
-} from "@/domain/configuration/schema";
-import { validateQuoteRequest } from "./validation";
+} from "@shared/configuration/schema";
 import {
   submissionError,
   type QuoteRepository,
+  type QuoteSubmissionErrorCode,
   type QuoteSubmissionResult,
-} from "./types";
+} from "@shared/quotes/types";
 
 /**
- * Production repository, backed by Supabase/Postgres over PostgREST.
+ * Production repository.
  *
- * Deliberately dependency-free: plain `fetch` keeps the static bundle small,
+ * Round 2.1: this no longer inserts into `quote_requests`. It posts to the
+ * `submit-quote` Edge Function, which validates with the shared domain code,
+ * prices the design itself and writes with the service role. Anonymous INSERT
+ * on the table is revoked by migration 0002, so this is the only route in.
+ *
+ * Dependency-free on purpose: plain `fetch` keeps the static bundle small,
  * keeps the app deployable to any static host, and makes the transport
  * trivially mockable in tests.
- *
- * Security lives in the database, not here — see
- * `supabase/migrations/0001_quote_requests.sql`:
- *  - anon may INSERT a row with status 'new' and nothing else;
- *  - anon may NOT SELECT the table, so contact details are never readable
- *    with a guessed reference;
- *  - reads go through `get_quote_summary()`, which returns confirmation
- *    fields and the configuration snapshot but no personal data.
  */
 
 export type FetchLike = typeof fetch;
@@ -38,8 +35,36 @@ export type SupabaseRepositoryOptions = {
 };
 
 const DEFAULT_TIMEOUT_MS = 15_000;
-const TABLE = "quote_requests";
-const SUMMARY_RPC = "get_quote_summary";
+export const SUBMIT_FUNCTION_PATH = "/functions/v1/submit-quote";
+const SUMMARY_RPC = "/rest/v1/rpc/get_quote_summary";
+
+/** Errors the boundary returns, mapped to how the UI should treat them. */
+const ERROR_BY_STATUS: Record<
+  number,
+  { code: QuoteSubmissionErrorCode; retryable: boolean; message: string }
+> = {
+  400: {
+    code: "validation",
+    retryable: false,
+    message: "Some details in this request were not accepted. Please review the form.",
+  },
+  403: {
+    code: "captcha_failed",
+    retryable: true,
+    message:
+      "We could not verify that this request came from a person. Please reload the page and try again.",
+  },
+  409: {
+    code: "duplicate",
+    retryable: true,
+    message: "That design reference has already been submitted.",
+  },
+  429: {
+    code: "rate_limited",
+    retryable: true,
+    message: "Too many requests from this address. Please wait a few minutes and try again.",
+  },
+};
 
 export class RemoteQuoteRepository implements QuoteRepository {
   readonly kind = "remote" as const;
@@ -56,7 +81,7 @@ export class RemoteQuoteRepository implements QuoteRepository {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
-  async submit(request: QuoteRequest): Promise<QuoteSubmissionResult> {
+  async submit(submission: PublicQuoteSubmission): Promise<QuoteSubmissionResult> {
     if (!this.url || !this.anonKey) {
       return submissionError(
         "not_configured",
@@ -64,64 +89,78 @@ export class RemoteQuoteRepository implements QuoteRepository {
       );
     }
 
-    const validated = validateQuoteRequest(request);
-    if (!validated.ok) {
-      return submissionError(
-        "validation",
-        validated.issues[0]?.message ?? "This request could not be validated.",
-        { detail: JSON.stringify(validated.issues) },
-      );
-    }
-
     try {
-      const response = await this.request(`/rest/v1/${TABLE}`, {
+      const response = await this.request(SUBMIT_FUNCTION_PATH, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Prefer: "return=representation",
-        },
-        body: JSON.stringify([toRow(validated.request)]),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(submission),
       });
 
-      if (response.status === 409) {
-        return submissionError(
-          "conflict",
-          "That design reference has already been submitted.",
-          { retryable: true },
-        );
+      if (response.ok) {
+        // Only a confirmed write counts. The reference and timestamp are the
+        // boundary's, not the browser's.
+        const body = (await response.json()) as {
+          ok?: boolean;
+          reference?: string;
+          submittedAt?: string;
+        };
+        if (!body?.ok || !body.reference) {
+          return submissionError(
+            "server_error",
+            "The quote service returned an unexpected response. Please try again.",
+            { retryable: true, detail: JSON.stringify(body).slice(0, 300) },
+          );
+        }
+        return {
+          ok: true,
+          reference: body.reference,
+          submittedAt: body.submittedAt ?? new Date().toISOString(),
+          storedIn: "remote",
+        };
       }
 
-      if (!response.ok) {
-        const detail = await safeText(response);
-        // 401/403 mean the RLS policy or key is wrong — retrying will not help.
-        const retryable = response.status >= 500;
-        return submissionError(
-          retryable ? "network" : "rejected",
-          retryable
-            ? "The quote service is temporarily unavailable. Please try again."
-            : "The quote service rejected this request. Please contact us directly.",
-          { retryable, detail: `${response.status} ${detail}` },
-        );
+      const known = ERROR_BY_STATUS[response.status];
+      const detail = await safeText(response);
+
+      if (known) {
+        // Prefer the boundary's own message when it supplied one.
+        const message = (await safeMessage(detail)) ?? known.message;
+        return submissionError(known.code, message, {
+          retryable: known.retryable,
+          detail: `${response.status} ${detail}`,
+        });
       }
 
-      // Only a confirmed write counts as success.
-      const rows = (await response.json()) as { reference?: string }[];
-      const reference = rows?.[0]?.reference ?? validated.request.reference;
-      return { ok: true, reference, storedIn: "remote" };
+      const retryable = response.status >= 500;
+      return submissionError(
+        retryable ? "server_error" : "validation",
+        retryable
+          ? "The quote service is temporarily unavailable. Please try again."
+          : "The quote service rejected this request. Please contact us directly.",
+        { retryable, detail: `${response.status} ${detail}` },
+      );
     } catch (error) {
+      const aborted = error instanceof Error && error.name === "AbortError";
       return submissionError(
         "network",
-        "We could not reach the quote service. Check your connection and try again.",
+        aborted
+          ? "The quote service took too long to respond. Please try again."
+          : "We could not reach the quote service. Check your connection and try again.",
         { retryable: true, detail: describe(error) },
       );
     }
   }
 
+  /**
+   * Reads still go through the safe summary RPC, which returns confirmation
+   * fields and the configuration but no personal data — a design reference
+   * must never be a key to somebody's contact details.
+   */
   async getByReference(reference: string): Promise<QuoteRecord | null> {
     if (!this.url || !this.anonKey) return null;
 
     try {
-      const response = await this.request(`/rest/v1/rpc/${SUMMARY_RPC}`, {
+      const response = await this.request(SUMMARY_RPC, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ p_reference: reference }),
@@ -158,28 +197,6 @@ export class RemoteQuoteRepository implements QuoteRepository {
   }
 }
 
-/** Map the request onto the table's columns. */
-function toRow(request: QuoteRequest) {
-  return {
-    reference: request.reference,
-    submitted_at: request.submittedAt,
-    status: "new",
-    schema_version: request.schemaVersion,
-    source: request.source,
-    customer_name: request.customer.fullName,
-    customer_email: request.customer.email,
-    customer_phone: request.customer.phone,
-    customer_city: request.customer.city,
-    preferred_contact: request.customer.preferredContact,
-    message: request.customer.message ?? null,
-    consent: request.customer.consent,
-    additional_services_json: request.additionalServices,
-    configuration_json: request.configuration,
-    pricing_json: request.pricing,
-    validation_json: request.validation,
-  };
-}
-
 type SummaryRow = {
   reference: string;
   submitted_at: string;
@@ -209,6 +226,16 @@ async function safeText(response: Response): Promise<string> {
     return (await response.text()).slice(0, 500);
   } catch {
     return "";
+  }
+}
+
+/** Pull the boundary's customer-safe message out of an error body. */
+async function safeMessage(body: string): Promise<string | null> {
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: string } };
+    return parsed?.error?.message ?? null;
+  } catch {
+    return null;
   }
 }
 

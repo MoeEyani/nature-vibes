@@ -1,8 +1,8 @@
 "use client";
 
-import { AQUARIUM_POSITIONS, AQUARIUM_SHAPES } from "@/data/catalog";
+import { AQUARIUM_POSITIONS, AQUARIUM_SHAPES } from "@shared/catalog";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
-import { estimateAquarium, HARDWARE_MASS_FACTOR, OPERATING_VOLUME_FACTOR } from "@/domain/aquarium/volume";
+import { estimateAquarium, HARDWARE_MASS_FACTOR, OPERATING_VOLUME_FACTOR } from "@shared/aquarium/volume";
 import { DISCLAIMERS } from "@/constants/brand";
 import { Callout } from "@/components/ui/Callout";
 import { DimensionField, Toggle } from "@/components/ui/Field";

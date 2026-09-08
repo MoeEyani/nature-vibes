@@ -138,6 +138,15 @@ every output.
 ### Source layout
 
 ```
+shared/                     runtime-neutral domain — no React, Next or browser
+  types/ catalog/ seed/     product and service catalog
+  configuration/            schema, derive, normalize
+  aquarium/ pricing/ rules/ the engines
+  quotes/ lib/              repository contract, ids
+  boundary/                 handleSubmitQuote — the trusted quote boundary
+supabase/
+  migrations/               schema, RLS, and the Round 2.1 lock-down
+  functions/submit-quote/   Deno shell around the shared boundary
 src/
   app/                      routes: home, /design/[step], /my-designs, /how-it-works
   components/
@@ -167,7 +176,7 @@ docs/                       implementation plan, product model, rules, assumptio
 | | Demo (default) | Production |
 | --- | --- | --- |
 | Repository | `LocalDemoQuoteRepository` | `RemoteQuoteRepository` (Supabase) |
-| Where a request goes | this browser only | `public.quote_requests` |
+| Where a request goes | this browser only | the `submit-quote` Edge Function, which writes `public.quote_requests` with the service role |
 | Success screen | "saved in this browser only… not sent to Nature Vibes" | shown only after the remote write is confirmed |
 | On failure | — | stays on the form, keeps the data, offers retry |
 
@@ -175,6 +184,15 @@ docs/                       implementation plan, product model, rules, assumptio
 knows which implementation it got. Production is honoured only when Supabase
 credentials are present; otherwise the app falls back to demo rather than
 claiming a request was received.
+
+**No browser code inserts into the database.** The browser posts a
+`PublicQuoteSubmission` — customer, configuration and services, with no price
+and no validation result — and the trusted boundary produces those itself.
+Anonymous INSERT on `quote_requests` is revoked by migration 0002. Both
+repositories run the *same* handler: the remote one across the network, the
+demo one with `localStorage` in the database's role, so demo is a faithful
+rehearsal rather than a laxer path. See
+[`docs/round2.1-production-boundary.md`](docs/round2.1-production-boundary.md).
 
 ### The four engines
 
@@ -203,9 +221,14 @@ Services (delivery, maintenance, consultation, site visit) live in
 render the *same* picker, and pricing derives from the same list, so the
 estimate and the submitted request cannot diverge.
 
-The submission boundary (`domain/quotes/validation.ts`) re-runs the rules and
-**recomputes the total** rather than trusting the client, and is written as a
-pure function so it can be lifted server-side unchanged.
+The submission boundary (`shared/boundary/handleSubmitQuote.ts`) runs the rules
+and **computes the total itself** rather than accepting one from the client.
+It is a pure function with injected side effects, so the identical code runs in
+the Supabase Edge Function, in demo mode and in the test suite.
+
+`shared/` is importable from Deno as well as Next.js: its internal imports are
+relative with explicit `.ts` extensions, which both toolchains accept. That is
+what keeps one pricing engine and one rule set rather than two that drift.
 
 ### The 3D layer
 
@@ -262,7 +285,9 @@ Full list with labels (Confirmed / Estimated / Assumption / Needs Measurement):
 | [`docs/rules.md`](docs/rules.md) | Every rule, its code, severity and rationale |
 | [`docs/assumptions.md`](docs/assumptions.md) | Every placeholder and unverified value, with its status label |
 | [`docs/round2-productionization.md`](docs/round2-productionization.md) | The lead pipeline: repository abstraction, modes, database, security, deployment |
+| [`docs/round2.1-production-boundary.md`](docs/round2.1-production-boundary.md) | The trusted boundary: Edge Function, lock-down migration, secrets, anti-spam, deployment |
 | [`supabase/migrations/`](supabase/migrations/) | SQL schema, RLS policies and the public read-back function |
+| [`supabase/functions/submit-quote/`](supabase/functions/submit-quote/) | The Edge Function that owns quote creation |
 
 ---
 
@@ -300,5 +325,20 @@ All verified in a headless browser run of the full journey:
 - [x] Environment cards preselect the clicked environment
 - [x] "Other" city captures an actual location
 - [x] Existing validation behaviour intact
-- [x] New tests cover the productionization changes (94 total)
+- [x] New tests cover the productionization changes
 - [x] Documentation explains how to configure and deploy the backend
+
+### Round 2.1 — production boundary hardening
+
+- [x] No browser code inserts directly into `quote_requests`
+- [x] Anonymous direct INSERT is revoked (migration 0002)
+- [x] Trusted Edge code validates the request
+- [x] Trusted code produces and stores the validation and price snapshots
+- [x] The remote repository uses the trusted submission endpoint
+- [x] The private notification URL is not bundled as `NEXT_PUBLIC_*`
+- [x] Notification happens only after a successful insert
+- [x] Notification failure does not lose the lead
+- [x] Demo GitHub Pages behaviour remains intact
+- [x] Production failures never render false success
+- [x] Tests cover the trusted-boundary behaviour (131 total)
+- [x] Deployment and security documentation is complete

@@ -42,6 +42,16 @@ export const IS_PRODUCTION = APP_MODE === "production";
 /** Identifies which client produced a quote request. */
 export const QUOTE_SOURCE = "web-configurator";
 
-/** Optional endpoint that is notified when a lead is created. */
-export const NOTIFY_WEBHOOK_URL =
-  process.env.NEXT_PUBLIC_NOTIFY_WEBHOOK_URL ?? "";
+/**
+ * Cloudflare Turnstile site key. Public by design — the *secret* key lives
+ * only in Supabase secrets, and verification happens in the Edge Function.
+ * When unset, no widget renders and the boundary skips captcha verification.
+ */
+export const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
+
+/**
+ * Team notification is server-side as of Round 2.1. The webhook URL is a
+ * Supabase secret (NATURE_VIBES_NOTIFY_WEBHOOK_URL), never a NEXT_PUBLIC_*
+ * value, because anything bundled into the browser is public.
+ */

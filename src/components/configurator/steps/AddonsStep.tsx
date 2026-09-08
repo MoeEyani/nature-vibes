@@ -1,8 +1,8 @@
 "use client";
 
-import { ADDONS, meta } from "@/data/catalog";
+import { ADDONS, meta } from "@shared/catalog";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
-import { isRequirementMet, requirementLabel } from "@/domain/configuration/derive";
+import { isRequirementMet, requirementLabel } from "@shared/configuration/derive";
 import { Badge } from "@/components/ui/Badge";
 import { Callout } from "@/components/ui/Callout";
 import { OptionCard } from "@/components/ui/OptionCard";

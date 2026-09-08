@@ -1,6 +1,6 @@
-import { getItem, meta } from "@/data/catalog";
-import type { DesignConfiguration } from "@/domain/configuration/schema";
-import { derive } from "@/domain/configuration/derive";
+import { getItem, meta } from "@shared/catalog";
+import type { DesignConfiguration } from "@shared/configuration/schema";
+import { derive } from "@shared/configuration/derive";
 
 /**
  * The scene model: configuration → an asset-key description of what to draw.

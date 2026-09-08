@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { APP_MODE, IS_DEMO, PRODUCTION_MISCONFIGURED } from "@/constants/appConfig";
 import { BRAND } from "@/constants/brand";
-import { quoteCustomerSchema } from "@/domain/configuration/schema";
-import { checkForSpam, HONEYPOT_FIELD } from "@/domain/quotes/antiSpam";
+import { quoteCustomerSchema } from "@shared/configuration/schema";
+import { checkForSpam, HONEYPOT_FIELD } from "@shared/quotes/antiSpam";
 import {
   useConfiguratorStore,
   usePriceBreakdown,
@@ -19,6 +19,7 @@ import { Callout } from "@/components/ui/Callout";
 import { Field, Select, TextArea, TextInput } from "@/components/ui/Field";
 import { cn } from "@/components/ui/cn";
 import { ServicesPicker } from "../ServicesPicker";
+import { TurnstileField, useTurnstileEnabled } from "../TurnstileField";
 import { SeverityBadge } from "../ValidationList";
 
 const CITIES = ["Riyadh", "Jeddah", "Dammam", "Khobar", "Makkah", "Madinah"];
@@ -215,6 +216,8 @@ function QuoteForm({ onSubmitted }: { onSubmitted: (reference: string) => void }
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [cityChoice, setCityChoice] = useState(CITIES[0]);
+  const [turnstileToken, setTurnstileToken] = useState<string | undefined>();
+  const turnstileEnabled = useTurnstileEnabled();
 
   // Used by the timing half of the anti-spam check.
   const mountedAt = useRef(Date.now());
@@ -273,15 +276,18 @@ function QuoteForm({ onSubmitted }: { onSubmitted: (reference: string) => void }
     setSubmitError(null);
     setSubmitting(true);
 
-    // Success is shown only after the repository confirms the write. On
+    // Success is shown only after the trusted boundary confirms the write. On
     // failure the form keeps everything the customer typed, so retry is free.
-    const result = await submitQuote({ customer: parsed.data });
+    const result = await submitQuote({ customer: parsed.data, turnstileToken });
     setSubmitting(false);
 
     if (result.ok) {
       onSubmitted(result.reference);
       return;
     }
+    // A used or rejected token cannot be replayed, so ask for a fresh one.
+    if (turnstileEnabled) setTurnstileToken(undefined);
+
     setSubmitError(
       result.error.retryable
         ? `${result.error.message} Your details are still here — press the button again to retry.`
@@ -362,7 +368,11 @@ function QuoteForm({ onSubmitted }: { onSubmitted: (reference: string) => void }
           />
         </Field>
 
-        {/* Honeypot: hidden from people, tempting to naive bots. */}
+        {turnstileEnabled ? <TurnstileField onToken={setTurnstileToken} /> : null}
+
+        {/* Honeypot: a first filter only, not a security control — anyone
+            posting directly to the endpoint bypasses it. The real checks run
+            server-side in the submit-quote Edge Function. */}
         <div aria-hidden className="hidden">
           <label>
             Company website
@@ -473,8 +483,10 @@ function QuoteForm({ onSubmitted }: { onSubmitted: (reference: string) => void }
             </div>
           </dl>
           <p className="mt-3 text-xs leading-relaxed text-ink-subtle">
-            The full configuration, price breakdown and validation results are
-            attached to the request. Mode: <span className="font-mono">{APP_MODE}</span>.
+            {IS_DEMO
+              ? "The configuration and your selected services are stored with the request in this browser."
+              : "Your configuration and services are sent to our team; the price and design checks are recalculated on our side before the request is stored."}{" "}
+            Mode: <span className="font-mono">{APP_MODE}</span>.
           </p>
         </div>
 

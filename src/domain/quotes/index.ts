@@ -6,13 +6,14 @@ import {
 } from "@/constants/appConfig";
 import { LocalDemoQuoteRepository } from "./localRepository";
 import { RemoteQuoteRepository } from "./supabaseRepository";
-import type { QuoteRepository } from "./types";
+import type { QuoteRepository } from "@shared/quotes/types";
 
-export * from "./types";
+export * from "@shared/quotes/types";
 export { LocalDemoQuoteRepository } from "./localRepository";
 export { RemoteQuoteRepository } from "./supabaseRepository";
-export { validateQuoteRequest } from "./validation";
-export { notifyTeam, buildNotificationPayload } from "./notifications";
+export { handleSubmitQuote } from "@shared/boundary/handleSubmitQuote";
+export { buildNotificationPayload } from "@shared/boundary/notification";
+export type { PublicQuoteSubmission } from "@shared/boundary/publicSubmission";
 
 let cached: QuoteRepository | null = null;
 

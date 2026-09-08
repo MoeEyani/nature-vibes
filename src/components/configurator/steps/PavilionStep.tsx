@@ -1,6 +1,6 @@
 "use client";
 
-import { PAVILION_FAMILIES, SHAPES, SIZE_PRESETS, meta } from "@/data/catalog";
+import { PAVILION_FAMILIES, SHAPES, SIZE_PRESETS, meta } from "@shared/catalog";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
 import { Callout } from "@/components/ui/Callout";
 import { OptionCard } from "@/components/ui/OptionCard";

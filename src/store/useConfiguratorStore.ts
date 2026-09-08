@@ -1,26 +1,23 @@
 "use client";
 
 import { create } from "zustand";
-import { APP_MODE, QUOTE_SOURCE } from "@/constants/appConfig";
-import { getItem, meta } from "@/data/catalog";
-import { normalizeServiceIds } from "@/data/catalog/services";
-import { DEFAULT_AQUARIUM } from "@/data/seed/defaultConfiguration";
-import { normalizeConfiguration } from "@/domain/configuration/normalize";
+import { QUOTE_SOURCE } from "@/constants/appConfig";
+import { getItem, meta } from "@shared/catalog";
+import { normalizeServiceIds } from "@shared/catalog/services";
+import { DEFAULT_AQUARIUM } from "@shared/seed/defaultConfiguration";
+import { normalizeConfiguration } from "@shared/configuration/normalize";
 import {
   QUOTE_SCHEMA_VERSION,
   type DesignConfiguration,
   type QuoteCustomer,
   type QuoteRequest,
   type SavedDesign,
-} from "@/domain/configuration/schema";
-import { calculatePrice } from "@/domain/pricing/calculatePrice";
-import { evaluateConfiguration } from "@/domain/rules/evaluateConfiguration";
-import {
-  getQuoteRepository,
-  notifyTeam,
-  type QuoteSubmissionResult,
-} from "@/domain/quotes";
-import { createDesignReference } from "@/lib/id";
+} from "@shared/configuration/schema";
+import { calculatePrice } from "@shared/pricing/calculatePrice";
+import { evaluateConfiguration } from "@shared/rules/evaluateConfiguration";
+import { getQuoteRepository, type QuoteSubmissionResult } from "@/domain/quotes";
+import type { PublicQuoteSubmission } from "@shared/boundary/publicSubmission";
+import { createDesignReference } from "@shared/lib/id";
 import {
   clearSession,
   createDefaultSession,
@@ -104,6 +101,8 @@ export type ConfiguratorState = {
    */
   submitQuote: (input: {
     customer: QuoteCustomer;
+    /** Cloudflare Turnstile token, when the widget is configured. */
+    turnstileToken?: string;
   }) => Promise<QuoteSubmissionResult>;
   /** Re-attach a reference restored from the URL on the success screen. */
   adoptReference: (reference: string) => void;
@@ -421,21 +420,39 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
       set({ savedDesigns });
     },
 
-    async submitQuote({ customer }) {
+    async submitQuote({ customer, turnstileToken }) {
       const state = get();
       const config = state.config;
-      // The services priced here are exactly the ones submitted below.
       const selectedServiceIds = normalizeServiceIds(state.selectedServiceIds);
+
+      // Round 2.1: the browser sends only what it is entitled to assert. The
+      // price and the validation snapshot are produced by the trusted
+      // boundary, so there is nothing here for a crafted client to forge.
+      const submission: PublicQuoteSubmission = {
+        schemaVersion: QUOTE_SCHEMA_VERSION,
+        reference: state.reference ?? undefined,
+        customer,
+        configuration: config,
+        selectedServiceIds,
+        source: QUOTE_SOURCE,
+        ...(turnstileToken ? { antiSpam: { turnstileToken } } : {}),
+      };
+
+      const result = await getQuoteRepository().submit(submission);
+      // Nothing is recorded as sent unless the write was confirmed. The caller
+      // stays on the quote screen and can retry with the form intact.
+      if (!result.ok) return result;
+
+      // Displayed locally only. The authoritative record is the stored row;
+      // this snapshot uses the same shared pricing code, so the figures agree.
       const breakdown = calculatePrice(config, { selectedServiceIds });
       const validation = evaluateConfiguration(config);
-      const reference = state.reference ?? createDesignReference();
-
-      const quote: QuoteRequest = {
-        reference,
-        submittedAt: nowIso(),
+      const confirmed: QuoteRequest = {
+        reference: result.reference,
+        submittedAt: result.submittedAt,
         schemaVersion: QUOTE_SCHEMA_VERSION,
         status: "new",
-        source: `${QUOTE_SOURCE}:${APP_MODE}`,
+        source: QUOTE_SOURCE,
         customer,
         additionalServices: selectedServiceIds,
         configuration: config,
@@ -447,17 +464,8 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => {
         validation: { status: validation.status, messages: validation.messages },
       };
 
-      const result = await getQuoteRepository().submit(quote);
-      // Nothing is recorded as sent unless the write was confirmed. The caller
-      // stays on the quote screen and can retry with the form intact.
-      if (!result.ok) return result;
-
-      const confirmed: QuoteRequest = { ...quote, reference: result.reference };
       set({ lastQuote: confirmed, reference: confirmed.reference });
       persist({ config, selectedServiceIds, reference: confirmed.reference });
-
-      // The lead is already durable; a failed notification must not undo it.
-      void notifyTeam(confirmed);
 
       return result;
     },

@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { getItem, itemName } from "@/data/catalog";
-import type { DesignConfiguration } from "@/domain/configuration/schema";
-import { derive } from "@/domain/configuration/derive";
+import { getItem, itemName } from "@shared/catalog";
+import type { DesignConfiguration } from "@shared/configuration/schema";
+import { derive } from "@shared/configuration/derive";
 import { formatFootprint, formatKilograms, formatLitres, formatMetres } from "@/lib/format";
 
 type Row = { label: string; value: string; step?: string };

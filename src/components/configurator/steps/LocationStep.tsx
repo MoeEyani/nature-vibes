@@ -2,11 +2,11 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef } from "react";
-import { ENVIRONMENTS } from "@/data/catalog";
+import { ENVIRONMENTS } from "@shared/catalog";
 import {
   ENVIRONMENT_PARAM,
   resolveEnvironmentParam,
-} from "@/domain/configuration/environmentParam";
+} from "@shared/configuration/environmentParam";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
 import { Callout } from "@/components/ui/Callout";
 import { OptionCard } from "@/components/ui/OptionCard";

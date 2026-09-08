@@ -1,8 +1,8 @@
 "use client";
 
-import { SPECIES, meta } from "@/data/catalog";
+import { SPECIES, meta } from "@shared/catalog";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
-import { estimateAquarium } from "@/domain/aquarium/volume";
+import { estimateAquarium } from "@shared/aquarium/volume";
 import { DISCLAIMERS } from "@/constants/brand";
 import { Badge } from "@/components/ui/Badge";
 import { Callout } from "@/components/ui/Callout";

@@ -5,19 +5,21 @@ import {
   LocalDemoQuoteRepository,
   RemoteQuoteRepository,
   setQuoteRepository,
-  validateQuoteRequest,
-  buildNotificationPayload,
-  type QuoteRepository,
-  type QuoteSubmissionResult,
 } from "@/domain/quotes";
-import { calculatePrice } from "@/domain/pricing/calculatePrice";
-import { evaluateConfiguration } from "@/domain/rules/evaluateConfiguration";
+import { SUBMIT_FUNCTION_PATH } from "@/domain/quotes/supabaseRepository";
+import type {
+  QuoteRepository,
+  QuoteSubmissionResult,
+} from "@shared/quotes/types";
+import type { PublicQuoteSubmission } from "@shared/boundary/publicSubmission";
+import { calculatePrice } from "@shared/pricing/calculatePrice";
+import { evaluateConfiguration } from "@shared/rules/evaluateConfiguration";
 import {
   QUOTE_SCHEMA_VERSION,
   quoteCustomerSchema,
   type QuoteCustomer,
   type QuoteRequest,
-} from "@/domain/configuration/schema";
+} from "@shared/configuration/schema";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
 import { AQUARIUM_1200, configure } from "./helpers";
 
@@ -31,27 +33,16 @@ const CUSTOMER: QuoteCustomer = {
   consent: true,
 };
 
-function buildRequest(overrides: Partial<QuoteRequest> = {}): QuoteRequest {
-  const configuration = overrides.configuration ?? configure();
-  const services = overrides.additionalServices ?? ["SVC-DELIVERY"];
-  const breakdown = calculatePrice(configuration, { selectedServiceIds: services });
-  const validation = evaluateConfiguration(configuration);
-
+function buildSubmission(
+  overrides: Partial<PublicQuoteSubmission> = {},
+): PublicQuoteSubmission {
   return {
-    reference: "NV-TEST-0001",
-    submittedAt: new Date().toISOString(),
     schemaVersion: QUOTE_SCHEMA_VERSION,
-    status: "new",
-    source: "web-configurator:test",
+    reference: "NV-TEST-0001",
     customer: CUSTOMER,
-    additionalServices: services,
-    configuration,
-    pricing: {
-      estimatedTotal: breakdown.total,
-      currency: "SAR",
-      isEstimate: breakdown.isEstimate,
-    },
-    validation: { status: validation.status, messages: validation.messages },
+    configuration: configure(),
+    selectedServiceIds: ["SVC-DELIVERY"],
+    source: "web-configurator",
     ...overrides,
   };
 }
@@ -93,68 +84,23 @@ describe("customer form validation", () => {
   });
 });
 
-describe("boundary validation", () => {
-  it("recomputes the total instead of trusting the client", () => {
-    const tampered = buildRequest();
-    tampered.pricing.estimatedTotal = 1;
-
-    const result = validateQuoteRequest(tampered);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.issues.some((i) => i.field === "pricing.estimatedTotal")).toBe(
-        true,
-      );
-    }
-  });
-
-  it("rejects a configuration with a blocking incompatibility", () => {
-    const request = buildRequest({
-      configuration: configure({
-        roof: { roofId: "ROOF-PERGOLA" },
-        addons: ["ADD-FAN"],
-      }),
-    });
-    const result = validateQuoteRequest(request);
-    expect(result.ok).toBe(false);
-  });
-
-  it("accepts a design that only needs engineering review", () => {
-    const configuration = configure({
-      environment: "ENV-ROOFTOP",
-      aquarium: AQUARIUM_1200,
-    });
-    expect(evaluateConfiguration(configuration).status).toBe("review_required");
-
-    const result = validateQuoteRequest(buildRequest({ configuration }));
-    expect(result.ok).toBe(true);
-  });
-
-  it("drops unknown services and re-prices from the known ones", () => {
-    const request = buildRequest({ additionalServices: ["SVC-DELIVERY"] });
-    request.additionalServices = ["SVC-DELIVERY", "SVC-MADE-UP"];
-
-    const result = validateQuoteRequest(request);
-    expect(result.ok).toBe(false);
-  });
-});
-
 describe("LocalDemoQuoteRepository", () => {
   it("stores the request in this browser and reads it back", async () => {
     const repo = new LocalDemoQuoteRepository();
-    const request = buildRequest();
-
-    const result = await repo.submit(request);
+    const result = await repo.submit(buildSubmission());
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.storedIn).toBe("local");
 
-    const found = await repo.getByReference(request.reference);
-    expect(found?.reference).toBe(request.reference);
-    expect(found?.estimatedTotal).toBe(request.pricing.estimatedTotal);
+    const found = await repo.getByReference("NV-TEST-0001");
+    expect(found?.reference).toBe("NV-TEST-0001");
+    // The demo repository runs the same trusted handler, so the stored total
+    // is the one the shared pricing code produced.
+    expect(found?.estimatedTotal).toBeGreaterThan(0);
   });
 
   it("does not expose contact details through getByReference", async () => {
     const repo = new LocalDemoQuoteRepository();
-    await repo.submit(buildRequest());
+    await repo.submit(buildSubmission());
 
     const record = await repo.getByReference("NV-TEST-0001");
     expect(record).not.toBeNull();
@@ -168,9 +114,10 @@ describe("LocalDemoQuoteRepository", () => {
 
   it("refuses a duplicate reference", async () => {
     const repo = new LocalDemoQuoteRepository();
-    await repo.submit(buildRequest());
-    const second = await repo.submit(buildRequest());
+    await repo.submit(buildSubmission());
+    const second = await repo.submit(buildSubmission());
     expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error.code).toBe("duplicate");
   });
 });
 
@@ -183,39 +130,153 @@ describe("RemoteQuoteRepository", () => {
     });
   }
 
-  it("succeeds only when the remote write is confirmed", async () => {
+  it("posts to the trusted Edge Function, never to the table", async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      calls.push(String(url));
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          reference: "NV-TEST-0001",
+          submittedAt: "2026-09-08T00:00:00.000Z",
+          status: "new",
+        }),
+        { status: 201 },
+      );
+    }) as unknown as typeof fetch;
+
+    const result = await repoWith(fetchImpl).submit(buildSubmission());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.storedIn).toBe("remote");
+      // The timestamp is the boundary's, not the browser's.
+      expect(result.submittedAt).toBe("2026-09-08T00:00:00.000Z");
+    }
+
+    expect(calls[0]).toContain(SUBMIT_FUNCTION_PATH);
+    // Anonymous INSERT is revoked by migration 0002; nothing may go there.
+    expect(calls.some((url) => url.includes("/rest/v1/quote_requests"))).toBe(false);
+  });
+
+  it("sends no price or validation result in the body", async () => {
+    let body = "";
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      body = String(init.body ?? "");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          reference: "NV-TEST-0001",
+          submittedAt: "2026-09-08T00:00:00.000Z",
+          status: "new",
+        }),
+        { status: 201 },
+      );
+    }) as unknown as typeof fetch;
+
+    await repoWith(fetchImpl).submit(buildSubmission());
+
+    const parsed = JSON.parse(body);
+    expect(parsed.pricing).toBeUndefined();
+    expect(parsed.validation).toBeUndefined();
+    expect(parsed.selectedServiceIds).toEqual(["SVC-DELIVERY"]);
+  });
+
+  it("does not report success when the endpoint answers with ok:false", async () => {
     const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify([{ reference: "NV-TEST-0001" }]), {
-        status: 201,
+      new Response(JSON.stringify({ ok: false }), { status: 200 }),
+    ) as unknown as typeof fetch;
+
+    const result = await repoWith(fetchImpl).submit(buildSubmission());
+    expect(result.ok).toBe(false);
+  });
+
+  it("surfaces a 400 as a non-retryable validation failure", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error: { code: "configuration_rejected", message: "Cannot be built together." },
+        }),
+        { status: 400 },
+      ),
+    ) as unknown as typeof fetch;
+
+    const result = await repoWith(fetchImpl).submit(buildSubmission());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.retryable).toBe(false);
+      // The boundary's own wording reaches the customer.
+      expect(result.error.message).toBe("Cannot be built together.");
+    }
+  });
+
+  it("surfaces a 409 duplicate", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: false, error: { code: "duplicate" } }), {
+        status: 409,
       }),
     ) as unknown as typeof fetch;
 
-    const result = await repoWith(fetchImpl).submit(buildRequest());
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.storedIn).toBe("remote");
+    const result = await repoWith(fetchImpl).submit(buildSubmission());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("duplicate");
   });
 
-  it("reports a retryable failure on a server error", async () => {
+  it("surfaces a 429 rate limit as retryable", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: false, error: { code: "rate_limited" } }), {
+        status: 429,
+      }),
+    ) as unknown as typeof fetch;
+
+    const result = await repoWith(fetchImpl).submit(buildSubmission());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("rate_limited");
+      expect(result.error.retryable).toBe(true);
+    }
+  });
+
+  it("surfaces a 403 captcha failure", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: false, error: { code: "captcha_failed" } }), {
+        status: 403,
+      }),
+    ) as unknown as typeof fetch;
+
+    const result = await repoWith(fetchImpl).submit(buildSubmission());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("captcha_failed");
+  });
+
+  it("treats a timeout as a retryable network failure", async () => {
+    const fetchImpl = vi.fn(async () => {
+      const error = new Error("aborted");
+      error.name = "AbortError";
+      throw error;
+    }) as unknown as typeof fetch;
+
+    const result = await repoWith(fetchImpl).submit(buildSubmission());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("network");
+      expect(result.error.retryable).toBe(true);
+      expect(result.error.message).toMatch(/took too long/i);
+    }
+  });
+
+  it("reports a retryable failure on a 5xx", async () => {
     const fetchImpl = vi.fn(async () =>
       new Response("boom", { status: 503 }),
     ) as unknown as typeof fetch;
 
-    const result = await repoWith(fetchImpl).submit(buildRequest());
+    const result = await repoWith(fetchImpl).submit(buildSubmission());
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.retryable).toBe(true);
-      expect(result.error.code).toBe("network");
+      expect(result.error.code).toBe("server_error");
     }
-  });
-
-  it("reports a non-retryable failure when the request is rejected", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response("denied", { status: 401 }),
-    ) as unknown as typeof fetch;
-
-    const result = await repoWith(fetchImpl).submit(buildRequest());
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.retryable).toBe(false);
   });
 
   it("treats a thrown network error as retryable", async () => {
@@ -223,19 +284,19 @@ describe("RemoteQuoteRepository", () => {
       throw new Error("offline");
     }) as unknown as typeof fetch;
 
-    const result = await repoWith(fetchImpl).submit(buildRequest());
+    const result = await repoWith(fetchImpl).submit(buildSubmission());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.retryable).toBe(true);
   });
 
   it("refuses to submit when credentials are missing", async () => {
     const repo = new RemoteQuoteRepository({ url: "", anonKey: "" });
-    const result = await repo.submit(buildRequest());
+    const result = await repo.submit(buildSubmission());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("not_configured");
   });
 
-  it("restores a record by reference through the summary function", async () => {
+  it("still reads back through the safe summary RPC", async () => {
     const fetchImpl = vi.fn(async () =>
       new Response(
         JSON.stringify([
@@ -368,13 +429,5 @@ describe("store submission", () => {
     const restored = await repository.getByReference(reference);
     expect(restored?.reference).toBe(reference);
     expect(restored?.configuration).toBeDefined();
-  });
-});
-
-describe("team notification", () => {
-  it("summarises the lead without leaking the message body", () => {
-    const payload = buildNotificationPayload(buildRequest());
-    expect(payload.reference).toBe("NV-TEST-0001");
-    expect(JSON.stringify(payload)).not.toContain("Please include delivery.");
   });
 });

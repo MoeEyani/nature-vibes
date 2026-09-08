@@ -7,8 +7,8 @@ import {
   loadSession,
   saveSession,
 } from "@/lib/persistence";
-import { calculatePrice } from "@/domain/pricing/calculatePrice";
-import { resolveEnvironmentParam, environmentHref } from "@/domain/configuration/environmentParam";
+import { calculatePrice } from "@shared/pricing/calculatePrice";
+import { resolveEnvironmentParam, environmentHref } from "@shared/configuration/environmentParam";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
 import { setQuoteRepository } from "@/domain/quotes";
 import { configure } from "./helpers";

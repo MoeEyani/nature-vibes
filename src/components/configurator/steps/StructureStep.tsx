@@ -1,6 +1,6 @@
 "use client";
 
-import { FINISHES, MATERIALS } from "@/data/catalog";
+import { FINISHES, MATERIALS } from "@shared/catalog";
 import { useConfiguratorStore } from "@/store/useConfiguratorStore";
 import { Callout } from "@/components/ui/Callout";
 import { OptionCard } from "@/components/ui/OptionCard";

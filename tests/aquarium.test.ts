@@ -3,7 +3,7 @@ import {
   estimateAquarium,
   HARDWARE_MASS_FACTOR,
   OPERATING_VOLUME_FACTOR,
-} from "@/domain/aquarium/volume";
+} from "@shared/aquarium/volume";
 
 describe("aquarium volume estimates", () => {
   it("returns zeroes when the aquarium is disabled", () => {

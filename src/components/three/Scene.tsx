@@ -3,7 +3,7 @@
 import { Suspense, useMemo } from "react";
 import { ContactShadows, OrbitControls } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import type { DesignConfiguration } from "@/domain/configuration/schema";
+import type { DesignConfiguration } from "@shared/configuration/schema";
 import { buildSceneModel } from "./sceneModel";
 import { Frame } from "./modules/Frame";
 import { Roof } from "./modules/Roof";

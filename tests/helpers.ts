@@ -1,6 +1,6 @@
-import { createDefaultConfiguration } from "@/data/seed/defaultConfiguration";
-import { normalizeConfiguration } from "@/domain/configuration/normalize";
-import type { DesignConfiguration } from "@/domain/configuration/schema";
+import { createDefaultConfiguration } from "@shared/seed/defaultConfiguration";
+import { normalizeConfiguration } from "@shared/configuration/normalize";
+import type { DesignConfiguration } from "@shared/configuration/schema";
 
 type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];

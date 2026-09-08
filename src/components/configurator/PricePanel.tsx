@@ -1,7 +1,7 @@
 "use client";
 
 import { DISCLAIMERS } from "@/constants/brand";
-import { groupLines, type PriceBreakdown } from "@/domain/pricing/calculatePrice";
+import { groupLines, type PriceBreakdown } from "@shared/pricing/calculatePrice";
 import { formatCurrency } from "@/lib/format";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/components/ui/cn";
