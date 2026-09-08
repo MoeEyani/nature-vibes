@@ -32,12 +32,14 @@ Because nothing rebuilds it automatically, **`gh-pages` must be republished
 after every source change** or visitors keep seeing the previous version:
 
 ```bash
+npm run pages:check     # is the live site serving current source? exit 1 = stale
 npm run deploy:pages    # builds out/ and force-pushes it to gh-pages
 ```
 
 Next.js embeds a random build ID in every page, so a rebuild is never
-byte-identical even when nothing changed. To tell a real change from a plain
-rebuild, compare the content-hashed files under `_next/static/chunks/`.
+byte-identical even when nothing changed — which is why `pages:check` exists
+rather than a plain diff. It compares the content-hashed files under
+`_next/static/chunks/` and the HTML with the build ID normalised away.
 
 **B. GitHub Actions (automatic).** Set **Settings → Pages → Source:
 _GitHub Actions_**. The `Deploy to GitHub Pages` workflow then typechecks,
