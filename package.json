@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "build:static": "NEXT_OUTPUT_EXPORT=1 next build",
     "build:standalone": "node tools/standalone/build.mjs",
-    "build:pages": "NEXT_OUTPUT_EXPORT=1 NEXT_PUBLIC_BASE_PATH=/nature-vibes next build"
+    "build:pages": "NEXT_OUTPUT_EXPORT=1 NEXT_PUBLIC_BASE_PATH=/nature-vibes next build",
+    "deploy:pages": "bash tools/publish-gh-pages.sh"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.6",

@@ -24,16 +24,20 @@ summary below.
 There are two ways to publish there. Pick one — running both at once makes them
 fight over the same Pages deployment.
 
-**A. Deploy from a branch (no CI required).** The `gh-pages` branch holds a
+**A. Deploy from a branch (currently live).** The `gh-pages` branch holds a
 prebuilt static site. Set **Settings → Pages → Source: _Deploy from a branch_**,
-branch `gh-pages`, folder `/ (root)`. Refresh it after changing the app with:
+branch `gh-pages`, folder `/ (root)`.
+
+Because nothing rebuilds it automatically, **`gh-pages` must be republished
+after every source change** or visitors keep seeing the previous version:
 
 ```bash
-npm run build:pages     # writes out/ with the right base path
+npm run deploy:pages    # builds out/ and force-pushes it to gh-pages
 ```
 
-then commit the contents of `out/` to `gh-pages`. Use this when GitHub Actions
-is unavailable on the account.
+Next.js embeds a random build ID in every page, so a rebuild is never
+byte-identical even when nothing changed. To tell a real change from a plain
+rebuild, compare the content-hashed files under `_next/static/chunks/`.
 
 **B. GitHub Actions (automatic).** Set **Settings → Pages → Source:
 _GitHub Actions_**. The `Deploy to GitHub Pages` workflow then typechecks,
