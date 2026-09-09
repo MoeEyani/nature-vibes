@@ -16,6 +16,7 @@ import { SiteFooter } from "@/components/layout/SiteFooter";
 import { SavedDesignsList } from "@/components/configurator/SavedDesignsList";
 import { ButtonLink } from "@/components/ui/Button";
 import HomePage from "@/app/page";
+import { StudioWorkspace } from "@/components/studio/StudioWorkspace";
 import HowItWorksPage from "@/app/how-it-works/page";
 import { usePathname } from "./router";
 
@@ -68,6 +69,14 @@ function App() {
   if (pathname === "/" || pathname === "") return <HomePage />;
   if (pathname === "/how-it-works") return <HowItWorksPage />;
   if (pathname === "/my-designs") return <MyDesignsPage />;
+  if (pathname === "/studio") {
+    return (
+      <>
+        <SiteHeader />
+        <StudioWorkspace />
+      </>
+    );
+  }
 
   if (pathname === "/design" || pathname === "/design/") {
     return (

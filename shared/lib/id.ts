@@ -16,6 +16,11 @@ export function createConfigurationId(): string {
   return `cfg_${randomChars(10).toLowerCase()}`;
 }
 
+/** Short id for a placed studio element. */
+export function createElementId(): string {
+  return `el_${randomChars(8).toLowerCase()}`;
+}
+
 /**
  * Customer-facing design reference, e.g. `NV-7KQ4-2M9X`.
  * Stable once assigned: it is what the customer quotes back to us.

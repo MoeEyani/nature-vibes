@@ -30,6 +30,9 @@ export const STORAGE_KEYS = {
   session: "nv.configurator.session.v2",
   savedDesigns: "nv.configurator.designs.v2",
   quotes: "nv.configurator.quotes.v2",
+  /** Design Studio — element-level designs. */
+  studioDesign: "nv.studio.design.v1",
+  studioSaved: "nv.studio.designs.v1",
 } as const;
 
 /** Read-only, for migration. Never written to. */

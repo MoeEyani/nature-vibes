@@ -53,6 +53,18 @@ Breaking any of these silently undoes a previous round.
   render the same `ServicesPicker`.
 - **Secrets are never `NEXT_PUBLIC_*`.** Anything bundled into the browser is
   public. Server secrets live in Supabase.
+- **The Design Studio reuses, it does not fork.** `shared/studio/pricing.ts`
+  emits the existing `PriceLine`/`PriceBreakdown`, `shared/studio/rules.ts`
+  emits the existing `ValidationMessage` and severities, and aquarium volume
+  comes from `shared/aquarium/volume.ts`. Adding a parallel copy of any of
+  those is the failure mode to avoid.
+- **Studio overlap and gaps use oriented footprints, not bounding boxes.**
+  Elements rotate freely; an axis-aligned test reports collisions that are not
+  there and silently disables the circulation check. Tests cover both.
+- **Studio drag tracking intersects the `y = 0` plane mathematically.** Never
+  raycast against the floor mesh: the ray hits whatever is already placed and
+  the drop is lost. And test "is the pointer over the canvas" by coordinates,
+  not `contains(event.target)` — the dimension labels are DOM overlays.
 
 ## Data discipline
 
@@ -81,4 +93,4 @@ npm run build:standalone  # single self-contained HTML file
 
 `docs/implementation-plan.md` · `docs/product-model.md` · `docs/rules.md` ·
 `docs/assumptions.md` · `docs/round2-productionization.md` ·
-`docs/round2.1-production-boundary.md`
+`docs/round2.1-production-boundary.md` · `docs/design-studio.md`

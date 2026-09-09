@@ -171,6 +171,21 @@ Every species record carries `meta.verified: false`, and the
 
 ---
 
+## 11b. Design Studio
+
+Every element type in `shared/studio/catalog.ts` is placeholder seed data on
+the same footing as the product catalog.
+
+| Value | Status | Note |
+| --- | --- | --- |
+| All 18 element default sizes and resize ranges | **Assumption** | Plausible values, not manufacturing specifications |
+| All element prices | **Assumption** | Placeholder, marked as such |
+| Finish colours | **Assumption** | UI colours, not paint or coating codes |
+| 600 mm minimum circulation gap | **Assumption** | A comfort guideline. **Not** an accessibility standard — the app says so |
+| 150 kg tank review threshold | **Assumption** | Shared with the configurator's rules |
+| Seat estimate at 0.6 m of bench per person | **Estimated** | Indicative, never a certified occupancy |
+| Post spacing, beam spans, section sizes, fixings, anchoring | **Needs Measurement** | Not calculated. Always escalated to `review_required` |
+
 ## 12. 3D
 
 | Value | Status | Note |

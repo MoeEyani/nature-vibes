@@ -146,11 +146,12 @@ shared/                     runtime-neutral domain — no React, Next or browser
   aquarium/ pricing/ rules/ the engines
   quotes/ lib/              repository contract, ids
   boundary/                 handleSubmitQuote — the trusted quote boundary
+  studio/                   element-level design: geometry, pricing, rules
 supabase/
   migrations/               schema, RLS, and the Round 2.1 lock-down
   functions/submit-quote/   Deno shell around the shared boundary
 src/
-  app/                      routes: home, /design/[step], /my-designs, /how-it-works
+  app/                      routes: home, /design/[step], /studio, /my-designs, /how-it-works
   components/
     configurator/           wizard shell, stepper, steps/, summary, price, validation
     three/                  Scene, Viewport, sceneModel, modules/ (frame, roof, seating, …)
@@ -173,7 +174,19 @@ tests/                      vitest suites
 docs/                       implementation plan, product model, rules, assumptions
 ```
 
-### Modes and the quote pipeline
+### Two ways to design
+
+| | Guided wizard (`/design`) | Design Studio (`/studio`) |
+| --- | --- | --- |
+| Model | One pavilion, configured from presets | Individual elements, placed freely |
+| Interaction | Fourteen steps | Drag onto a 3D canvas, edit each element |
+| Output | Configuration → price, rules, quote | Design → price, rules |
+
+They sit side by side and share the same discipline: catalog-driven options,
+placeholder seed data, and validation that escalates rather than approves. See
+[`docs/design-studio.md`](docs/design-studio.md).
+
+## Modes and the quote pipeline
 
 | | Demo (default) | Production |
 | --- | --- | --- |
@@ -288,6 +301,7 @@ Full list with labels (Confirmed / Estimated / Assumption / Needs Measurement):
 | [`docs/assumptions.md`](docs/assumptions.md) | Every placeholder and unverified value, with its status label |
 | [`docs/round2-productionization.md`](docs/round2-productionization.md) | The lead pipeline: repository abstraction, modes, database, security, deployment |
 | [`docs/round2.1-production-boundary.md`](docs/round2.1-production-boundary.md) | The trusted boundary: Edge Function, lock-down migration, secrets, anti-spam, deployment |
+| [`docs/design-studio.md`](docs/design-studio.md) | The Design Studio: element-level canvas, geometry, validation, decisions |
 | [`supabase/migrations/`](supabase/migrations/) | SQL schema, RLS policies and the public read-back function |
 | [`supabase/functions/submit-quote/`](supabase/functions/submit-quote/) | The Edge Function that owns quote creation |
 
