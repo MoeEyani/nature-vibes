@@ -24,6 +24,7 @@ export type StudioElementKind =
   | "deck";
 
 export type StudioGroup =
+  | "Assemblies"
   | "Structure"
   | "Seating"
   | "Surfaces"
@@ -33,6 +34,42 @@ export type StudioGroup =
   | "Lighting";
 
 export type SizeRange = { minMm: number; maxMm: number; stepMm: number };
+
+/**
+ * A parametric assembly — the "dynamic group".
+ *
+ * An assembly stores *parameters*, not children. Its posts, beams and roof are
+ * derived from those parameters every time they are needed, so changing the
+ * span moves the posts with no synchronisation to go wrong and nothing to get
+ * out of step. `shared/studio/assemblies.ts` holds the derivation.
+ *
+ * The parameter specs live here, as data, so the properties panel can render
+ * controls for any assembly without knowing what it is.
+ */
+export type AssemblyParamSpec =
+  | {
+      kind: "number";
+      key: string;
+      label: string;
+      minMm: number;
+      maxMm: number;
+      stepMm: number;
+      /** `mm` shows a millimetre box; `count` shows a plain integer. */
+      unit: "mm" | "count";
+    }
+  | {
+      kind: "choice";
+      key: string;
+      label: string;
+      options: { value: string; label: string }[];
+    };
+
+export type AssemblyParams = Record<string, number | string>;
+
+export type AssemblySpec = {
+  params: AssemblyParamSpec[];
+  defaults: AssemblyParams;
+};
 
 export type StudioElementType = {
   id: string;
@@ -61,6 +98,13 @@ export type StudioElementType = {
   priceMode: "perUnit" | "perSquareMetre" | "perLinearMetre";
   /** Stable key the 3D layer maps to geometry, as elsewhere in the project. */
   assetKey: string;
+  /**
+   * Hidden types are derived parts of an assembly, never offered in the
+   * palette on their own.
+   */
+  hidden?: boolean;
+  /** Present on assemblies. Their size is derived from these, not set. */
+  assembly?: AssemblySpec;
   /** Seating capacity contribution, for the summary. Estimated, not certified. */
   seats?: number;
   meta?: Record<string, unknown>;
@@ -97,7 +141,123 @@ const METAL = ["COL-MATTE-BLACK", "COL-BRONZE", "COL-STONE", "COL-WARM-WHITE"];
 const TIMBER = ["COL-TEAK", "COL-WALNUT", "COL-MATTE-BLACK", "COL-STONE"];
 const FABRIC = ["COL-SAND", "COL-OLIVE", "COL-TERRACOTTA", "COL-MATTE-BLACK"];
 
+const ROOF_STYLE_OPTIONS = [
+  { value: "pyramid", label: "Pyramid" },
+  { value: "flat", label: "Flat" },
+  { value: "gable", label: "Gable" },
+  { value: "pergola", label: "Pergola" },
+  { value: "louvered", label: "Louvered" },
+];
+
 export const STUDIO_ELEMENT_TYPES: StudioElementType[] = [
+  // --------------------------------------------------------------- Assemblies
+  //
+  // These store parameters and derive their parts. They are deliberately
+  // `solid: false`: collision is checked on the derived posts and beams, so a
+  // bench placed *inside* a pavilion is not reported as a clash — which is the
+  // whole point of putting it there.
+  //
+  // They carry no price either. `calculateStudioPrice` expands them and prices
+  // the parts, so the bill of materials stays honest and derivable.
+  {
+    id: "ASM-PAVILION",
+    sku: "STU-ASM-PAV",
+    kind: "post",
+    group: "Assemblies",
+    name: "Pavilion",
+    description:
+      "Roof, posts and beams as one group. Change the span and the posts move with it; change the roof style and nothing else has to.",
+    // What the default parameters derive: a 3 m span plus 300 mm of overhang
+    // each side, and a 2.6 m eave under a 700 mm pyramid. The palette caption
+    // and the drag ghost read this, so a wrong value here advertises a
+    // pavilion that is not the one that lands on the canvas.
+    // `tests/studioAssemblies.test.ts` holds the two in step.
+    defaultSize: { widthMm: 3600, depthMm: 3600, heightMm: 3300 },
+    resize: {},
+    defaultElevationMm: 0,
+    solid: false,
+    colorIds: METAL,
+    price: placeholder(0),
+    priceMode: "perUnit",
+    assetKey: "studio:assembly",
+    assembly: {
+      params: [
+        { kind: "number", key: "spanW", label: "Span (width)", minMm: 1800, maxMm: 8000, stepMm: 100, unit: "mm" },
+        { kind: "number", key: "spanD", label: "Span (depth)", minMm: 1800, maxMm: 8000, stepMm: 100, unit: "mm" },
+        { kind: "number", key: "eaveHeight", label: "Eave height", minMm: 2000, maxMm: 3600, stepMm: 50, unit: "mm" },
+        { kind: "choice", key: "roofStyle", label: "Roof style", options: ROOF_STYLE_OPTIONS },
+        { kind: "number", key: "overhang", label: "Roof overhang", minMm: 0, maxMm: 800, stepMm: 50, unit: "mm" },
+        { kind: "number", key: "baysW", label: "Bays across width", minMm: 1, maxMm: 4, stepMm: 1, unit: "count" },
+        { kind: "number", key: "baysD", label: "Bays across depth", minMm: 1, maxMm: 4, stepMm: 1, unit: "count" },
+        { kind: "number", key: "postSection", label: "Post section", minMm: 80, maxMm: 200, stepMm: 10, unit: "mm" },
+      ],
+      defaults: {
+        spanW: 3000,
+        spanD: 3000,
+        eaveHeight: 2600,
+        roofStyle: "pyramid",
+        overhang: 300,
+        baysW: 1,
+        baysD: 1,
+        postSection: 100,
+      },
+    },
+  },
+  {
+    id: "ASM-SEATING",
+    sku: "STU-ASM-SEAT",
+    kind: "bench",
+    group: "Assemblies",
+    name: "Seating Layout",
+    description:
+      "A bench run around a rectangle — perimeter, U, L or a single side. Reuses the same layouts as the guided wizard.",
+    defaultSize: { widthMm: 3000, depthMm: 3000, heightMm: 450 },
+    resize: {},
+    defaultElevationMm: 0,
+    solid: false,
+    colorIds: TIMBER,
+    price: placeholder(0),
+    priceMode: "perUnit",
+    assetKey: "studio:assembly",
+    assembly: {
+      params: [
+        {
+          kind: "choice",
+          key: "layoutId",
+          label: "Layout",
+          options: [
+            { value: "SEAT-PERIMETER", label: "Around / Perimeter" },
+            { value: "SEAT-U", label: "U-shape" },
+            { value: "SEAT-L", label: "L-shape" },
+            { value: "SEAT-INSIDE", label: "Inside (two sides)" },
+            { value: "SEAT-ONE-SIDE", label: "One side" },
+          ],
+        },
+        { kind: "number", key: "spanW", label: "Span (width)", minMm: 1200, maxMm: 8000, stepMm: 100, unit: "mm" },
+        { kind: "number", key: "spanD", label: "Span (depth)", minMm: 1200, maxMm: 8000, stepMm: 100, unit: "mm" },
+        { kind: "number", key: "seatDepth", label: "Seat depth", minMm: 400, maxMm: 900, stepMm: 50, unit: "mm" },
+        { kind: "number", key: "seatHeight", label: "Seat height", minMm: 380, maxMm: 520, stepMm: 10, unit: "mm" },
+        {
+          kind: "choice",
+          key: "style",
+          label: "Seat style",
+          options: [
+            { value: "bench", label: "Slatted bench" },
+            { value: "lounge", label: "Cushioned lounge" },
+          ],
+        },
+      ],
+      defaults: {
+        layoutId: "SEAT-PERIMETER",
+        spanW: 3000,
+        spanD: 3000,
+        seatDepth: 550,
+        seatHeight: 450,
+        style: "bench",
+      },
+    },
+  },
+
   // ---------------------------------------------------------------- Structure
   {
     id: "EL-POST",
@@ -162,6 +322,32 @@ export const STUDIO_ELEMENT_TYPES: StudioElementType[] = [
     priceMode: "perSquareMetre",
     assetKey: "studio:deck",
   },
+
+  // Hidden roof surfaces. Only ever produced by an assembly, never offered on
+  // their own, but real catalog records so the roof appears in the breakdown.
+  ...([
+    ["pyramid", "Pyramid Roof", 2400, 700],
+    ["flat", "Flat Roof", 1900, 160],
+    ["gable", "Gable Roof", 2500, 800],
+    ["pergola", "Pergola Roof", 1600, 220],
+    ["louvered", "Louvered Roof", 3800, 240],
+  ] as const).map(([style, name, price, peak]) => ({
+    id: `EL-ROOF-${style.toUpperCase()}`,
+    sku: `STU-ROF-${style.slice(0, 3).toUpperCase()}`,
+    kind: "deck" as StudioElementKind,
+    group: "Structure" as StudioGroup,
+    name,
+    description: "Derived from a pavilion assembly.",
+    defaultSize: { widthMm: 3600, depthMm: 3600, heightMm: peak },
+    resize: {},
+    defaultElevationMm: 2600,
+    solid: false,
+    colorIds: METAL,
+    price: placeholder(price),
+    priceMode: "perSquareMetre" as const,
+    assetKey: `studio:roof-${style}`,
+    hidden: true,
+  })),
 
   // ------------------------------------------------------------------ Seating
   {
@@ -484,6 +670,7 @@ export function getElementType(typeId: string): StudioElementType | undefined {
 }
 
 export const STUDIO_GROUPS: StudioGroup[] = [
+  "Assemblies",
   "Structure",
   "Seating",
   "Surfaces",
@@ -494,5 +681,11 @@ export const STUDIO_GROUPS: StudioGroup[] = [
 ];
 
 export function typesByGroup(group: StudioGroup): StudioElementType[] {
-  return STUDIO_ELEMENT_TYPES.filter((type) => type.group === group);
+  return STUDIO_ELEMENT_TYPES.filter(
+    (type) => type.group === group && !type.hidden,
+  );
+}
+
+export function isAssemblyType(typeId: string): boolean {
+  return Boolean(STUDIO_TYPE_INDEX[typeId]?.assembly);
 }

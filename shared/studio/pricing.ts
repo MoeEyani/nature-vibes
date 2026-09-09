@@ -1,5 +1,6 @@
 import type { PriceBreakdown, PriceLine } from "../pricing/calculatePrice.ts";
 import { getElementType } from "./catalog.ts";
+import { defaultParts, deriveParts, expandDesign, isAssembly } from "./assemblies.ts";
 import { areaM2, runM } from "./geometry.ts";
 import type { StudioDesign, StudioElement } from "./schema.ts";
 
@@ -59,8 +60,31 @@ export function priceElement(element: StudioElement): PriceLine | null {
   };
 }
 
+/**
+ * Every line one element contributes.
+ *
+ * An assembly contributes its derived parts, never itself — it carries no
+ * price of its own, so pricing it directly would report zero for a pavilion.
+ */
+export function priceElementLines(element: StudioElement): PriceLine[] {
+  const source = isAssembly(element) ? deriveParts(element) : [element];
+  return source
+    .map(priceElement)
+    .filter((line): line is PriceLine => line !== null);
+}
+
+/** What an assembly costs at its default parameters, for the palette. */
+export function assemblyStartingPrice(typeId: string): number {
+  return defaultParts(typeId).reduce(
+    (total, element) => total + (priceElement(element)?.subtotal ?? 0),
+    0,
+  );
+}
+
 export function calculateStudioPrice(design: StudioDesign): PriceBreakdown {
-  const lines = design.elements
+  // Assemblies are priced as the sum of their derived parts, so the breakdown
+  // stays a real bill of materials rather than an invented lump sum.
+  const lines = expandDesign(design)
     .map(priceElement)
     .filter((line): line is PriceLine => line !== null);
 
@@ -89,7 +113,7 @@ export type StudioPriceGroup = {
 export function groupStudioLines(design: StudioDesign): StudioPriceGroup[] {
   const groups = new Map<string, StudioPriceGroup>();
 
-  for (const element of design.elements) {
+  for (const element of expandDesign(design)) {
     const type = getElementType(element.typeId);
     if (!type) continue;
     const line = priceElement(element);
@@ -114,7 +138,7 @@ export function groupStudioLines(design: StudioDesign): StudioPriceGroup[] {
 
 /** Indicative seat count. Estimated, never a certified occupancy. */
 export function estimateSeats(design: StudioDesign): number {
-  return design.elements.reduce((total, element) => {
+  return expandDesign(design).reduce((total, element) => {
     const type = getElementType(element.typeId);
     if (!type?.seats) return total;
 

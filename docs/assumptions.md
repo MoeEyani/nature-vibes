@@ -1,8 +1,8 @@
 ---
 project: Nature Vibes
 document_type: Assumptions, Placeholders & Open Questions
-version: 1.0
-date: 2026-09-07
+version: 1.1
+date: 2026-09-09
 status: Living document
 ---
 
@@ -185,6 +185,25 @@ the same footing as the product catalog.
 | 150 kg tank review threshold | **Assumption** | Shared with the configurator's rules |
 | Seat estimate at 0.6 m of bench per person | **Estimated** | Indicative, never a certified occupancy |
 | Post spacing, beam spans, section sizes, fixings, anchoring | **Needs Measurement** | Not calculated. Always escalated to `review_required` |
+
+### Assemblies (dynamic groups)
+
+An assembly stores parameters and derives its parts, so its *rules of
+composition* are placeholder data too — not just its numbers.
+
+| Value | Status | Note |
+| --- | --- | --- |
+| Assembly parameter ranges (span 1.8–8.0 m, eave 2.0–3.6 m, overhang 0–800 mm, 1–4 bays, post section 80–200 mm) | **Assumption** | Chosen to bound the tool to plausible shapes, not derived from any structural calculation |
+| Posts only on the perimeter of the bay grid | **Assumption** | A layout convention for the demo. Whether a given span needs an intermediate post is **Needs Measurement** |
+| Beam depth 160 mm, top landing on the eave line | **Assumption** | Visual convention. Real beam depth follows from the span and is not calculated here |
+| Five roof styles and their peak heights (pyramid 700, flat 160, gable 800, pergola 220, louvered 240 mm) | **Assumption** | Massing only. No drainage fall, structure, fixing or wind design is implied |
+| Roof prices per m² (1,600–3,800 SAR) | **Assumption** | Placeholder seed values like every other price |
+| Seating run inset — side runs shortened by one seat depth at each end | **Assumption** | So corners meet in the demo geometry. Not a joinery detail |
+| Lounge seat height taken as 55% of overall height | **Assumption** | A property of the placeholder geometry, not an ergonomic standard |
+
+A derived pavilion is **not** an engineered structure. It is a massing study
+priced from a placeholder bill of materials, and every structural conclusion
+about it remains `review_required`.
 
 ## 12. 3D
 

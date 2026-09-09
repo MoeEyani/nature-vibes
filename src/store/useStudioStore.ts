@@ -7,6 +7,7 @@ import {
   createElement,
   createEmptyDesign,
   duplicateElement,
+  explodeAssembly,
   findFreeSpot,
   normalizeDesign,
   snapPosition,
@@ -82,6 +83,8 @@ export type StudioState = {
   nudge: (elementId: string, dx: number, dz: number) => void;
   rotate: (elementId: string, deltaDeg: number) => void;
   duplicate: (elementId: string) => void;
+  /** Replace an assembly with the loose elements it stands for. */
+  explode: (elementId: string) => void;
   remove: (elementId: string) => void;
   clearAll: () => void;
 
@@ -274,6 +277,26 @@ export const useStudioStore = create<StudioState>((set, get) => {
       const copy = duplicateElement(element, design);
       commit((current) => ({ ...current, elements: [...current.elements, copy] }));
       set({ selectedId: copy.id });
+    },
+
+    explode(elementId) {
+      const design = get().design;
+      const element = findElement(design, elementId);
+      if (!element || element.locked) return;
+
+      const parts = explodeAssembly(element, design);
+      // `explodeAssembly` returns the element unchanged when it is not an
+      // assembly; nothing to record in that case.
+      if (parts.length === 1 && parts[0].id === element.id) return;
+
+      commit((current) => ({
+        ...current,
+        elements: current.elements.flatMap((entry) =>
+          entry.id === elementId ? parts : [entry],
+        ),
+      }));
+      // The assembly is gone, so the selection has to move with it.
+      set({ selectedId: parts[0]?.id ?? null, hoveredId: null });
     },
 
     remove(elementId) {

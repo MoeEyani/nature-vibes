@@ -3,13 +3,16 @@
 import {
   STUDIO_COLOR_INDEX,
   getElementType,
+  type AssemblyParamSpec,
+  type AssemblyParams,
   type SizeRange,
 } from "@shared/studio/catalog";
+import { deriveParts, resolveParams } from "@shared/studio/assemblies";
 import { estimateAquarium } from "@shared/aquarium/volume";
 import type { StudioElement } from "@shared/studio/schema";
 import { useStudioStore } from "@/store/useStudioStore";
 import { formatCurrency, formatKilograms, formatLitres } from "@/lib/format";
-import { priceElement } from "@shared/studio/pricing";
+import { priceElementLines } from "@shared/studio/pricing";
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Callout";
 import { Field, TextInput } from "@/components/ui/Field";
@@ -52,11 +55,15 @@ function ElementProperties({ element }: { element: StudioElement }) {
   const duplicate = useStudioStore((state) => state.duplicate);
   const remove = useStudioStore((state) => state.remove);
   const rotate = useStudioStore((state) => state.rotate);
+  const explode = useStudioStore((state) => state.explode);
 
   const type = getElementType(element.typeId);
   if (!type) return null;
 
-  const line = priceElement(element);
+  const assembly = type.assembly;
+  const lines = priceElementLines(element);
+  const elementTotal = lines.reduce((total, entry) => total + entry.subtotal, 0);
+  const partCount = assembly ? deriveParts(element).length : 0;
   const isTank = element.typeId === "EL-AQUARIUM";
   const estimates = isTank
     ? estimateAquarium({
@@ -91,6 +98,17 @@ function ElementProperties({ element }: { element: StudioElement }) {
           />
         </Field>
 
+        {assembly ? (
+          <AssemblySection
+            spec={assembly.params}
+            params={resolveParams(element)}
+            onChange={(params) => patchElement(element.id, { params })}
+            widthMm={element.widthMm}
+            depthMm={element.depthMm}
+            heightMm={element.heightMm}
+            partCount={partCount}
+          />
+        ) : (
         <section>
           <h3 className="eyebrow mb-2 text-ink-subtle">Size</h3>
           <div className="space-y-3">
@@ -122,6 +140,7 @@ function ElementProperties({ element }: { element: StudioElement }) {
             ) : null}
           </div>
         </section>
+        )}
 
         <section>
           <h3 className="eyebrow mb-2 text-ink-subtle">Rotation</h3>
@@ -229,18 +248,35 @@ function ElementProperties({ element }: { element: StudioElement }) {
           </Callout>
         ) : null}
 
-        {line ? (
+        {lines.length > 0 ? (
           <div className="rounded-card border border-line bg-sand/30 p-3 text-sm">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-ink-muted">This element</span>
+              <span className="text-ink-muted">
+                {assembly ? "This group" : "This element"}
+              </span>
               <span className="font-medium tabular-nums text-ink">
-                {formatCurrency(line.subtotal)}
+                {formatCurrency(elementTotal)}
               </span>
             </div>
-            <p className="mt-1 text-xs text-ink-subtle">
-              {line.quantity} {line.unit} × {formatCurrency(line.unitPrice)} ·
-              placeholder price
-            </p>
+            {assembly ? (
+              <ul className="mt-2 space-y-0.5 text-xs text-ink-subtle">
+                {lines.map((entry) => (
+                  <li key={entry.itemId} className="flex justify-between gap-3">
+                    <span>
+                      {entry.description} · {entry.quantity} {entry.unit}
+                    </span>
+                    <span className="tabular-nums">
+                      {formatCurrency(entry.subtotal)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-xs text-ink-subtle">
+                {lines[0].quantity} {lines[0].unit} ×{" "}
+                {formatCurrency(lines[0].unitPrice)} · placeholder price
+              </p>
+            )}
           </div>
         ) : null}
 
@@ -248,6 +284,16 @@ function ElementProperties({ element }: { element: StudioElement }) {
           <Button size="sm" variant="secondary" onClick={() => duplicate(element.id)}>
             Duplicate
           </Button>
+          {assembly ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              title="Break the group into separate elements. This cannot be re-grouped."
+              onClick={() => explode(element.id)}
+            >
+              Ungroup
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="secondary"
@@ -270,11 +316,14 @@ function SizeControl({
   value,
   range,
   onChange,
+  unit = "mm",
 }: {
   label: string;
   value: number;
   range: SizeRange | undefined;
   onChange: (value: number) => void;
+  /** Suffix beside the number box. Empty for plain counts. */
+  unit?: string;
 }) {
   if (!range) {
     return (
@@ -302,7 +351,7 @@ function SizeControl({
             onChange={(event) => onChange(Number(event.target.value))}
             className="w-20 rounded border border-line bg-white px-1.5 py-0.5 text-right text-sm tabular-nums text-ink focus:border-brand-green focus:outline-none"
           />
-          <span className="text-xs text-ink-subtle">mm</span>
+          {unit ? <span className="text-xs text-ink-subtle">{unit}</span> : null}
         </div>
       </div>
       <input
@@ -316,5 +365,85 @@ function SizeControl({
         className="mt-1.5 w-full accent-[var(--color-brand-green)]"
       />
     </div>
+  );
+}
+
+/**
+ * Parameter controls for an assembly.
+ *
+ * Rendered generically from the type's `AssemblyParamSpec[]`, so a new
+ * assembly needs a catalog entry and a deriver — never a new panel. The
+ * footprint is shown as a result, not a control: it follows from the
+ * parameters, and offering a width box here would let the two disagree.
+ */
+function AssemblySection({
+  spec,
+  params,
+  onChange,
+  widthMm,
+  depthMm,
+  heightMm,
+  partCount,
+}: {
+  spec: AssemblyParamSpec[];
+  params: AssemblyParams;
+  onChange: (params: AssemblyParams) => void;
+  widthMm: number;
+  depthMm: number;
+  heightMm: number;
+  partCount: number;
+}) {
+  return (
+    <section>
+      <h3 className="eyebrow mb-2 text-ink-subtle">Group</h3>
+      <div className="space-y-3">
+        {spec.map((param) =>
+          param.kind === "choice" ? (
+            <div key={param.key}>
+              <label
+                htmlFor={`asm-${param.key}`}
+                className="text-sm text-ink-muted"
+              >
+                {param.label}
+              </label>
+              <select
+                id={`asm-${param.key}`}
+                value={String(params[param.key] ?? param.options[0].value)}
+                onChange={(event) =>
+                  onChange({ ...params, [param.key]: event.target.value })
+                }
+                className="mt-1 w-full rounded border border-line bg-white px-2 py-1.5 text-sm text-ink focus:border-brand-green focus:outline-none"
+              >
+                {param.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <SizeControl
+              key={param.key}
+              label={param.label}
+              unit={param.unit === "count" ? "" : "mm"}
+              value={Number(params[param.key] ?? param.minMm)}
+              range={{
+                minMm: param.minMm,
+                maxMm: param.maxMm,
+                stepMm: param.stepMm,
+              }}
+              onChange={(value) => onChange({ ...params, [param.key]: value })}
+            />
+          ),
+        )}
+      </div>
+
+      <p className="mt-3 rounded-card border border-line bg-sand/30 px-3 py-2 text-xs text-ink-subtle">
+        Footprint {(widthMm / 1000).toFixed(2)} × {(depthMm / 1000).toFixed(2)} m ·
+        height {(heightMm / 1000).toFixed(2)} m · {partCount}{" "}
+        {partCount === 1 ? "part" : "parts"}. All derived from the settings
+        above.
+      </p>
+    </section>
   );
 }

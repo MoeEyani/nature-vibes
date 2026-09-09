@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo } from "react";
+import * as THREE from "three";
 import { colorHex, getElementType } from "@shared/studio/catalog";
 import type { StudioElement } from "@shared/studio/schema";
 
@@ -61,6 +63,20 @@ export function ElementGeometry({ element }: { element: StudioElement }) {
       return <Pendant dims={dims} color={color} />;
     case "studio:lantern":
       return <Lantern dims={dims} color={color} />;
+    case "studio:roof-pyramid":
+      return <RoofPyramid dims={dims} color={color} />;
+    case "studio:roof-flat":
+      return <RoofFlat dims={dims} color={color} />;
+    case "studio:roof-gable":
+      return <RoofGable dims={dims} color={color} />;
+    case "studio:roof-pergola":
+      return <RoofPergola dims={dims} color={color} />;
+    case "studio:roof-louvered":
+      return <RoofLouvered dims={dims} color={color} />;
+    // An assembly draws nothing of its own: the scene renders the parts it
+    // derives, which are real elements with real geometry.
+    case "studio:assembly":
+      return null;
     default:
       return <Fallback dims={dims} color={color} />;
   }
@@ -511,6 +527,206 @@ function Lantern({ dims, color }: Props) {
         intensity={2}
         distance={2.4}
       />
+    </group>
+  );
+}
+
+/* -------------------------------------------------------------------- *
+ * Roof surfaces
+ *
+ * Only ever produced by a pavilion assembly, which sizes them from its span
+ * and overhang and lifts them to the eave line. Each draws from y = 0 like
+ * every other element, so the assembly does not have to know how tall a
+ * particular style is.
+ * -------------------------------------------------------------------- */
+
+/** The band around a roof's lower edge — what you actually see from below. */
+function Fascia({ dims, color }: Props) {
+  const height = Math.min(0.09, dims.h * 0.5);
+  return (
+    <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
+      <boxGeometry args={[dims.w, height, dims.d]} />
+      <meshStandardMaterial color={color} {...METAL} />
+    </mesh>
+  );
+}
+
+function RoofPyramid({ dims, color }: Props) {
+  const fascia = Math.min(0.09, dims.h * 0.5);
+  const rise = Math.max(0.02, dims.h - fascia);
+
+  return (
+    <group>
+      <Fascia dims={dims} color={color} />
+      {/*
+        A four-sided cone is a square pyramid. Its base corners sit at radius
+        r, so a unit-box footprint needs r = √2⁄2; scaling the group then
+        stretches it to any rectangle, which a fixed radius could not do.
+      */}
+      <group position={[0, fascia, 0]} scale={[dims.w, rise, dims.d]}>
+        <mesh position={[0, 0.5, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+          <coneGeometry args={[Math.SQRT2 / 2, 1, 4]} />
+          <meshStandardMaterial color={color} metalness={0.5} roughness={0.55} flatShading />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+function RoofFlat({ dims, color }: Props) {
+  return (
+    <group>
+      <mesh position={[0, dims.h / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[dims.w, dims.h, dims.d]} />
+        <meshStandardMaterial color={color} {...METAL} />
+      </mesh>
+      {/* A shallow upstand, so a flat roof does not read as a floating slab. */}
+      <mesh position={[0, dims.h + 0.02, 0]}>
+        <boxGeometry args={[dims.w * 0.995, 0.04, dims.d * 0.995]} />
+        <meshStandardMaterial color={color} metalness={0.5} roughness={0.6} />
+      </mesh>
+    </group>
+  );
+}
+
+function RoofGable({ dims, color }: Props) {
+  const fascia = Math.min(0.09, dims.h * 0.4);
+  const rise = Math.max(0.02, dims.h - fascia);
+  const half = dims.d / 2;
+  const slope = Math.hypot(half, rise);
+  // Angle of the pitch, measured from horizontal.
+  const pitch = Math.atan2(rise, half);
+  const thickness = 0.05;
+
+  // The gable ends, as a triangle in the Z/Y plane.
+  const endShape = useMemo(() => {
+    const shape = new THREE.Shape();
+    shape.moveTo(-half, 0);
+    shape.lineTo(half, 0);
+    shape.lineTo(0, rise);
+    shape.closePath();
+    return shape;
+  }, [half, rise]);
+
+  return (
+    <group>
+      <Fascia dims={dims} color={color} />
+      <group position={[0, fascia, 0]}>
+        {/* Ridge runs along X; the two planes fall toward ±Z. */}
+        <mesh position={[0, rise / 2, half / 2]} rotation={[pitch, 0, 0]} castShadow>
+          <boxGeometry args={[dims.w, thickness, slope]} />
+          <meshStandardMaterial color={color} metalness={0.5} roughness={0.55} />
+        </mesh>
+        <mesh
+          position={[0, rise / 2, -half / 2]}
+          rotation={[Math.PI - pitch, 0, 0]}
+          castShadow
+        >
+          <boxGeometry args={[dims.w, thickness, slope]} />
+          <meshStandardMaterial color={color} metalness={0.5} roughness={0.55} />
+        </mesh>
+        {[-1, 1].map((side) => (
+          <mesh
+            key={side}
+            position={[(side * dims.w) / 2, 0, 0]}
+            rotation={[0, Math.PI / 2, 0]}
+          >
+            <shapeGeometry args={[endShape]} />
+            <meshStandardMaterial
+              color={color}
+              side={THREE.DoubleSide}
+              metalness={0.4}
+              roughness={0.7}
+            />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  );
+}
+
+/** Perimeter frame shared by the two open roofs. */
+function RoofFrame({ dims, color }: Props) {
+  const member = 0.06;
+  return (
+    <group>
+      {[-1, 1].map((side) => (
+        <mesh
+          key={`x${side}`}
+          position={[0, dims.h / 2, (side * (dims.d - member)) / 2]}
+          castShadow
+        >
+          <boxGeometry args={[dims.w, dims.h, member]} />
+          <meshStandardMaterial color={color} {...METAL} />
+        </mesh>
+      ))}
+      {[-1, 1].map((side) => (
+        <mesh
+          key={`z${side}`}
+          position={[(side * (dims.w - member)) / 2, dims.h / 2, 0]}
+          castShadow
+        >
+          <boxGeometry args={[member, dims.h, dims.d]} />
+          <meshStandardMaterial color={color} {...METAL} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function RoofPergola({ dims, color }: Props) {
+  // Rafter spacing is a real spacing, not a fixed count: widen the pavilion
+  // and you get more rafters, not stretched ones.
+  const spacing = 0.32;
+  const count = Math.max(2, Math.round(dims.w / spacing) - 1);
+  const rafter = 0.05;
+
+  return (
+    <group>
+      <RoofFrame dims={dims} color={color} />
+      {Array.from({ length: count }, (_, index) => (
+        <mesh
+          key={index}
+          position={[
+            -dims.w / 2 + (dims.w / (count + 1)) * (index + 1),
+            dims.h * 0.62,
+            0,
+          ]}
+          castShadow
+        >
+          <boxGeometry args={[rafter, dims.h * 0.72, dims.d - 0.12]} />
+          <meshStandardMaterial color={color} {...METAL} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function RoofLouvered({ dims, color }: Props) {
+  const spacing = 0.17;
+  const count = Math.max(3, Math.round(dims.w / spacing) - 1);
+  const blade = 0.16;
+
+  return (
+    <group>
+      <RoofFrame dims={dims} color={color} />
+      {Array.from({ length: count }, (_, index) => (
+        <mesh
+          key={index}
+          position={[
+            -dims.w / 2 + (dims.w / (count + 1)) * (index + 1),
+            dims.h * 0.55,
+            0,
+          ]}
+          // Blades on the tilt, which is what tells a louvered roof apart
+          // from a pergola at a glance.
+          rotation={[0, 0, Math.PI / 6]}
+          castShadow
+        >
+          <boxGeometry args={[blade, 0.018, dims.d - 0.12]} />
+          <meshStandardMaterial color={color} metalness={0.65} roughness={0.35} />
+        </mesh>
+      ))}
     </group>
   );
 }

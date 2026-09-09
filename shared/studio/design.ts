@@ -1,5 +1,15 @@
 import { createConfigurationId, createElementId } from "../lib/id.ts";
-import { getElementType, type StudioElementType } from "./catalog.ts";
+import {
+  getElementType,
+  type AssemblyParams,
+  type StudioElementType,
+} from "./catalog.ts";
+import {
+  assemblySize,
+  clampParams,
+  deriveParts,
+  isAssembly,
+} from "./assemblies.ts";
 import { clamp, clampToSite, elementsCollide, snap } from "./geometry.ts";
 import {
   DEFAULT_GRID_MM,
@@ -38,18 +48,23 @@ export function createElement(
   const type = getElementType(typeId);
   if (!type) return null;
 
+  // An assembly's size is not chosen — it follows from its parameters.
+  const params = type.assembly ? clampParams(typeId, type.assembly.defaults) : undefined;
+  const size = params ? assemblySize(typeId, params) : null;
+
   const element: StudioElement = {
     id: createElementId(),
     typeId,
     x: snap(position.x, design.gridMm),
     z: snap(position.z, design.gridMm),
     rotationDeg: 0,
-    widthMm: type.defaultSize.widthMm,
-    depthMm: type.defaultSize.depthMm,
-    heightMm: type.defaultSize.heightMm,
+    widthMm: size?.widthMm ?? type.defaultSize.widthMm,
+    depthMm: size?.depthMm ?? type.defaultSize.depthMm,
+    heightMm: size?.heightMm ?? type.defaultSize.heightMm,
     elevationMm: type.defaultElevationMm,
     colorId: type.colorIds[0],
     locked: false,
+    ...(params ? { params } : {}),
   };
 
   const clamped = clampToSite(element, design.site);
@@ -80,6 +95,7 @@ export type ElementPatch = Partial<
     | "colorId"
     | "label"
     | "locked"
+    | "params"
   >
 >;
 
@@ -99,6 +115,29 @@ export function applyPatch(
   if (!type) return element;
 
   const next: StudioElement = { ...element, ...patch };
+
+  // An assembly is edited through its parameters; its footprint is a result,
+  // never an input, so a stray width patch must not be able to desync it.
+  if (type.assembly) {
+    const params = clampParams(element.typeId, {
+      ...(element.params ?? {}),
+      ...((patch.params ?? {}) as AssemblyParams),
+    });
+    const size = assemblySize(element.typeId, params);
+
+    const resized: StudioElement = {
+      ...next,
+      params,
+      widthMm: size?.widthMm ?? element.widthMm,
+      depthMm: size?.depthMm ?? element.depthMm,
+      heightMm: size?.heightMm ?? element.heightMm,
+      elevationMm: type.defaultElevationMm,
+      rotationDeg: ((Math.round(next.rotationDeg) % 360) + 360) % 360,
+      x: patch.x !== undefined ? Math.round(next.x) : next.x,
+      z: patch.z !== undefined ? Math.round(next.z) : next.z,
+    };
+    return { ...resized, ...clampToSite(resized, design.site) };
+  }
 
   next.widthMm = clampDimension(next.widthMm, type.resize.width, element.widthMm);
   next.depthMm = clampDimension(next.depthMm, type.resize.depth, element.depthMm);
@@ -208,6 +247,31 @@ export function duplicateElement(
     locked: false,
   };
   return { ...copy, ...clampToSite(copy, design.site) };
+}
+
+/**
+ * Turn an assembly into the loose elements it stands for.
+ *
+ * A one-way door, deliberately: once exploded the parts are free to be moved
+ * and edited individually, and the parametric link is gone. That is simpler to
+ * reason about — and to undo — than a half-linked hybrid.
+ */
+export function explodeAssembly(
+  element: StudioElement,
+  design: StudioDesign,
+): StudioElement[] {
+  if (!isAssembly(element)) return [element];
+
+  return deriveParts(element).map((partElement) => {
+    const loose: StudioElement = {
+      ...partElement,
+      id: createElementId(),
+      locked: false,
+    };
+    // `parentId` only exists on derived parts; a loose element must not carry it.
+    delete (loose as { parentId?: string }).parentId;
+    return { ...loose, ...clampToSite(loose, design.site) };
+  });
 }
 
 /**

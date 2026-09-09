@@ -1,7 +1,7 @@
 ---
 project: Nature Vibes
 document_type: Design Studio — element-level configuration
-version: 1.0
+version: 1.1
 date: 2026-09-09
 status: Delivered on branch claude/nature-vibes-design-studio
 ---
@@ -23,7 +23,7 @@ A three-pane workspace at `/studio`:
 
 | Pane | Contents |
 | --- | --- |
-| Left | The palette — 18 element types in 7 groups |
+| Left | The palette — 2 assemblies and 18 element types, in 8 groups |
 | Centre | The 3D canvas |
 | Right | Properties of the selection, then a live summary |
 
@@ -49,6 +49,65 @@ selected element's own width, depth and height.
 **View.** 3D and Plan, a grid with an adjustable snap step (off / 50 / 100 /
 250 / 500 mm), a site size, and an orientation gizmo.
 
+**Groups.** The first palette section, *Assemblies*, holds things that are made
+of other things: a **Pavilion** (posts, beams and a roof) and a **Seating
+Layout** (a bench run around a rectangle). Placing one adds a single element to
+the design; its parts follow from its settings. Change the span and the posts
+move with it, add a bay and a post appears, switch the roof style and only the
+roof changes. **Ungroup** turns it into loose elements when the customer wants
+to break the pattern.
+
+---
+
+## 1a. Assemblies — the dynamic group
+
+The rule the whole mechanism rests on: **an assembly stores parameters, never
+children.**
+
+Its parts are derived from those parameters every time they are needed —
+`shared/studio/assemblies.ts` — so nothing is stored twice and there is no
+synchronisation to drift. Widening a pavilion does not *move* eight posts; it
+means eight posts are computed somewhere else next time. There is no state in
+which the span and the posts can disagree, because only one of them is state.
+
+Two consequences follow, and both are load-bearing:
+
+- **The footprint is a result, not an input.** `applyPatch` routes an assembly
+  through its parameter specs and recomputes its size; a stray `widthMm` patch
+  is ignored rather than allowed to desync it. The properties panel shows the
+  footprint as a readout and offers no width box.
+- **Everything downstream sees the parts, not the container.** Pricing, rules,
+  collision, the dimension envelope and the 3D scene all consume
+  `expandDesign(design)`, which replaces each assembly with its parts. A
+  pavilion therefore costs the sum of its posts, beams and roof, with a real
+  SKU per line — never an invented lump sum. Assemblies carry a zero price of
+  their own precisely so that a forgotten expansion shows up as an obviously
+  wrong total rather than a plausible one.
+
+Parts of the same assembly are excluded from collision and circulation
+checking; a pavilion's own posts are not a clash, and neither is a bench placed
+inside it — that being the point of putting it there. A pavilion post against a
+*loose* post is still reported.
+
+Adding an assembly is a catalog entry (parameter specs as data, so the
+properties panel renders controls for it without knowing what it is) plus a
+deriver in `assemblies.ts`. No new panel, no new pricing path, no new geometry
+unless it introduces a genuinely new part.
+
+| Assembly | Parameters | Derives |
+| --- | --- | --- |
+| Pavilion | span W/D, eave height, roof style, overhang, bays W/D, post section | Perimeter posts on the bay grid, four beams landing on the eave line, one roof |
+| Seating Layout | layout, span W/D, seat depth, seat height, style | One bench or lounge run per side of the chosen layout |
+
+The seating layouts are read from `shared/catalog/seating.ts` — the guided
+wizard's own list — so the two halves of the product cannot disagree about what
+a U-shape is.
+
+**Ungroup is a one-way door.** Once exploded the parts are ordinary elements,
+freely editable, and the parametric link is gone. That is simpler to reason
+about — and to undo, since it is a single history step — than a half-linked
+hybrid.
+
 ---
 
 ## 2. Architecture
@@ -59,12 +118,13 @@ The studio follows the project's existing rules exactly.
 
 ```
 shared/studio/
-  schema.ts     StudioDesign, StudioElement — Zod, millimetres, integers
-  catalog.ts    18 element types + the finish palette
-  geometry.ts   footprints, overlap, gaps, snapping, site clamping
-  design.ts     create / patch / duplicate / normalise / find a free spot
-  pricing.ts    design → line items → estimated total
-  rules.ts      validation, same contract as the configurator's engine
+  schema.ts       StudioDesign, StudioElement — Zod, millimetres, integers
+  catalog.ts      element types, assembly parameter specs, the finish palette
+  assemblies.ts   parameters → derived parts; expandDesign
+  geometry.ts     footprints, overlap, gaps, snapping, site clamping
+  design.ts       create / patch / duplicate / explode / normalise / free spot
+  pricing.ts      design → line items → estimated total
+  rules.ts        validation, same contract as the configurator's engine
 ```
 
 No React, no Next, no browser API — so the Supabase Edge Function can validate
@@ -83,12 +143,18 @@ exactly as it already does for wizard configurations.
 ### 3D by asset key
 
 `ElementGeometry` switches on `assetKey` (`studio:post`, `studio:bench`,
-`studio:aquarium`, …) exactly as the wizard's scene does. Real GLB assets can
-replace any branch without touching the studio, the store or the domain.
+`studio:aquarium`, `studio:roof-gable`, …) exactly as the wizard's scene does.
+Real GLB assets can replace any branch without touching the studio, the store
+or the domain.
+
+An assembly draws nothing of its own (`studio:assembly` renders `null`): the
+scene renders the parts it derives. Selection, hover and drag address the
+assembly, never a part — derived ids are synthetic and are never persisted, so
+there is nothing there to select.
 
 ---
 
-## 3. Two decisions worth recording
+## 3. Three decisions worth recording
 
 ### Oriented-rectangle overlap, not bounding boxes
 
@@ -112,6 +178,17 @@ case — dropping a chair onto a deck. `PointerTracker` intersects the pointer
 ray with the mathematical `y = 0` plane instead, which has no blind spot.
 Releasing away from the canvas abandons the drag rather than dropping the
 element wherever it was last seen.
+
+### Derive the parts, do not store them
+
+The obvious implementation of a group is a parent element holding a list of
+children, kept in step by an update routine. That routine is the bug: every
+edit path that forgets to call it leaves a pavilion whose roof is the old size,
+and the failure is invisible until someone reads the quote.
+
+Storing only the parameters removes the class of bug rather than guarding
+against it. The cost is that parts are recomputed on demand — cheap here, since
+a design holds tens of elements, not thousands.
 
 ---
 
@@ -169,8 +246,9 @@ real changes rather than through mouse movements.
 ## 7. Not in this round
 
 No quote flow from the studio, no conversion between a studio design and a
-wizard configuration, no roof or canopy elements, no multi-select, no
-copy/paste between designs, and no server-side validation of studio designs.
+wizard configuration, no re-grouping of exploded parts, no nesting of one
+assembly inside another, no multi-select, no copy/paste between designs, and no
+server-side validation of studio designs.
 The domain is already shaped for the last of those: `evaluateStudioDesign` and
 `calculateStudioPrice` are pure functions in `shared/`, which is what the
 trusted boundary imports from.

@@ -39,6 +39,12 @@ export const studioElementSchema = z.object({
   label: z.string().max(60).optional(),
   /** Locked elements cannot be moved or edited until unlocked. */
   locked: z.boolean().default(false),
+  /**
+   * Assembly parameters. Present only on assemblies, which store these
+   * instead of children and derive their parts from them — see
+   * `shared/studio/assemblies.ts`.
+   */
+  params: z.record(z.string(), z.union([z.number(), z.string()])).optional(),
 });
 
 export type StudioElement = z.infer<typeof studioElementSchema>;

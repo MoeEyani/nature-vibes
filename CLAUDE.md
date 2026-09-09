@@ -61,6 +61,17 @@ Breaking any of these silently undoes a previous round.
 - **Studio overlap and gaps use oriented footprints, not bounding boxes.**
   Elements rotate freely; an axis-aligned test reports collisions that are not
   there and silently disables the circulation check. Tests cover both.
+- **An assembly stores parameters, never children.** `shared/studio/assemblies.ts`
+  derives a pavilion's posts, beams and roof from its parameters every time they
+  are needed. Storing the parts alongside the parameters reintroduces exactly the
+  drift this removes. Its footprint is a result too: `applyPatch` recomputes it
+  and ignores a direct `widthMm`.
+- **Everything downstream consumes `expandDesign(design)`.** Pricing, rules,
+  collision, dimensions and the scene see the derived parts, not the container.
+  That is why a pavilion's price is a real bill of materials — assemblies carry a
+  zero price of their own, so a forgotten expansion shows up as an obviously
+  wrong total rather than a plausible one. Parts sharing a parent are excluded
+  from collision and circulation.
 - **Studio drag tracking intersects the `y = 0` plane mathematically.** Never
   raycast against the floor mesh: the ray hits whatever is already placed and
   the drop is lost. And test "is the pointer over the canvas" by coordinates,

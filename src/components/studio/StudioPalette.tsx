@@ -6,6 +6,7 @@ import {
   typesByGroup,
   type StudioElementType,
 } from "@shared/studio/catalog";
+import { assemblyStartingPrice } from "@shared/studio/pricing";
 import { useStudioStore } from "@/store/useStudioStore";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/components/ui/cn";
@@ -112,9 +113,17 @@ function PaletteItem({
         <span className="block truncate text-[11px] text-ink-subtle">
           {(type.defaultSize.widthMm / 1000).toFixed(2)} ×{" "}
           {(type.defaultSize.depthMm / 1000).toFixed(2)} m ·{" "}
-          {formatCurrency(type.price.amount)}
-          {type.priceMode === "perLinearMetre" ? "/m" : null}
-          {type.priceMode === "perSquareMetre" ? "/m²" : null}
+          {/* An assembly has no price of its own; quote the parts it starts
+              with, so the palette never claims a pavilion is free. */}
+          {type.assembly ? (
+            <>from {formatCurrency(assemblyStartingPrice(type.id))}</>
+          ) : (
+            <>
+              {formatCurrency(type.price.amount)}
+              {type.priceMode === "perLinearMetre" ? "/m" : null}
+              {type.priceMode === "perSquareMetre" ? "/m²" : null}
+            </>
+          )}
         </span>
       </span>
     </button>

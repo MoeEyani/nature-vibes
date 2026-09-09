@@ -1,5 +1,6 @@
 import type { StudioDesign, StudioElement, StudioSite } from "./schema.ts";
 import { getElementType } from "./catalog.ts";
+import { expandDesign, parentOf } from "./assemblies.ts";
 
 /**
  * Studio geometry.
@@ -138,14 +139,23 @@ export function elementsCollide(a: StudioElement, b: StudioElement): boolean {
   return footprintsOverlap(a, b);
 }
 
-/** Every colliding pair in a design, each reported once. */
+/**
+ * Every colliding pair in a design, each reported once.
+ *
+ * Works on the *expanded* design, so an assembly is judged by the parts it
+ * stands for. Two parts of the same assembly are never a clash — a beam
+ * resting on its own posts is the design working, not a fault.
+ */
 export function findCollisions(design: StudioDesign): [StudioElement, StudioElement][] {
   const pairs: [StudioElement, StudioElement][] = [];
-  const { elements } = design;
+  const elements = expandDesign(design);
   for (let i = 0; i < elements.length; i += 1) {
     for (let j = i + 1; j < elements.length; j += 1) {
-      if (elementsCollide(elements[i], elements[j])) {
-        pairs.push([elements[i], elements[j]]);
+      const a = elements[i];
+      const b = elements[j];
+      const sharedParent = parentOf(a) && parentOf(a) === parentOf(b);
+      if (!sharedParent && elementsCollide(a, b)) {
+        pairs.push([a, b]);
       }
     }
   }
@@ -156,9 +166,10 @@ export const EMPTY_RECT: Rect = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
 
 /** Envelope enclosing every element. Zeroed for an empty design. */
 export function designBounds(design: StudioDesign): Rect {
-  if (design.elements.length === 0) return EMPTY_RECT;
+  const elements = expandDesign(design);
+  if (elements.length === 0) return EMPTY_RECT;
 
-  return design.elements.reduce<Rect>((acc, element) => {
+  return elements.reduce<Rect>((acc, element) => {
     const rect = bounds(element);
     return {
       minX: Math.min(acc.minX, rect.minX),
@@ -166,7 +177,7 @@ export function designBounds(design: StudioDesign): Rect {
       minZ: Math.min(acc.minZ, rect.minZ),
       maxZ: Math.max(acc.maxZ, rect.maxZ),
     };
-  }, bounds(design.elements[0]));
+  }, bounds(elements[0]));
 }
 
 export function rectSize(rect: Rect): { widthMm: number; depthMm: number } {

@@ -5,6 +5,7 @@ import { ContactShadows, Edges, Grid, GizmoHelper, GizmoViewport, OrbitControls 
 import { Canvas, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { getElementType } from "@shared/studio/catalog";
+import { deriveParts, isAssembly, parentOf } from "@shared/studio/assemblies";
 import { bounds, designBounds, findCollisions, rectSize } from "@shared/studio/geometry";
 import type { StudioDesign, StudioElement } from "@shared/studio/schema";
 import { useStudioStore } from "@/store/useStudioStore";
@@ -85,11 +86,16 @@ function SceneContents({
   const span = Math.max(design.site.widthMm, design.site.depthMm) * MM;
 
   // Ids the rules engine says are colliding — drawn in the alert colour.
+  //
+  // Collision runs on derived parts, whose ids are synthetic. A clash on a
+  // pavilion post has to light up the pavilion, since that is the thing the
+  // customer can actually select and move, so each part is reported under its
+  // parent.
   const collidingIds = useMemo(() => {
     const ids = new Set<string>();
     for (const [a, b] of findCollisions(design)) {
-      ids.add(a.id);
-      ids.add(b.id);
+      ids.add(parentOf(a) ?? a.id);
+      ids.add(parentOf(b) ?? b.id);
     }
     return ids;
   }, [design]);
@@ -321,12 +327,79 @@ function PlacedElement({
   const isSelected = selectedId === element.id;
   const isHovered = hoveredId === element.id;
 
+  const assembly = isAssembly(element);
+  // Derived parts carry world coordinates already — `place()` applies the
+  // assembly's own position and rotation — so they are drawn in an untransformed
+  // group. Nesting them under the assembly's transform would apply it twice.
+  const parts = useMemo(
+    () => (assembly ? deriveParts(element) : []),
+    [assembly, element],
+  );
+
   if (hidden) return null;
+
+  const transform = {
+    position: [element.x * MM, element.elevationMm * MM, element.z * MM] as const,
+    rotation: [0, -element.rotationDeg * (Math.PI / 180), 0] as const,
+  };
+
+  const indicator =
+    isSelected || isHovered || colliding ? (
+      <SelectionBox
+        element={element}
+        tone={colliding ? "alert" : isSelected ? "selected" : "hover"}
+      />
+    ) : null;
+
+  if (assembly) {
+    return (
+      <group
+        onPointerOver={(event) => {
+          event.stopPropagation();
+          hover(element.id);
+          document.body.style.cursor = element.locked ? "not-allowed" : "grab";
+        }}
+        onPointerOut={() => {
+          hover(null);
+          document.body.style.cursor = "";
+        }}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          // Pressing any part selects the assembly, never the part: the parts
+          // do not exist as far as the design is concerned.
+          select(element.id);
+          if (!element.locked) {
+            beginMove(element.id);
+            document.body.style.cursor = "grabbing";
+          }
+        }}
+      >
+        {parts.map((partElement) => (
+          <group
+            key={partElement.id}
+            position={[
+              partElement.x * MM,
+              partElement.elevationMm * MM,
+              partElement.z * MM,
+            ]}
+            rotation={[0, -partElement.rotationDeg * (Math.PI / 180), 0]}
+          >
+            <ElementGeometry element={partElement} />
+          </group>
+        ))}
+        {indicator ? (
+          <group position={transform.position} rotation={transform.rotation}>
+            {indicator}
+          </group>
+        ) : null}
+      </group>
+    );
+  }
 
   return (
     <group
-      position={[element.x * MM, element.elevationMm * MM, element.z * MM]}
-      rotation={[0, -element.rotationDeg * (Math.PI / 180), 0]}
+      position={transform.position}
+      rotation={transform.rotation}
       onPointerOver={(event) => {
         event.stopPropagation();
         hover(element.id);
@@ -346,12 +419,7 @@ function PlacedElement({
       }}
     >
       <ElementGeometry element={element} />
-      {isSelected || isHovered || colliding ? (
-        <SelectionBox
-          element={element}
-          tone={colliding ? "alert" : isSelected ? "selected" : "hover"}
-        />
-      ) : null}
+      {indicator}
     </group>
   );
 }

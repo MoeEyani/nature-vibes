@@ -3,6 +3,7 @@ import { worstSeverity } from "../rules/types.ts";
 import { estimateAquarium } from "../aquarium/volume.ts";
 import { getElementType } from "./catalog.ts";
 import { findCollisions, gapBetween, isInsideSite } from "./geometry.ts";
+import { expandDesign, parentOf } from "./assemblies.ts";
 import type { StudioDesign, StudioElement } from "./schema.ts";
 
 /**
@@ -43,10 +44,12 @@ function nameOf(element: StudioElement): string {
 
 export function evaluateStudioDesign(design: StudioDesign): StudioValidationResult {
   const messages: ValidationMessage[] = [];
-  const { elements } = design;
+  // Rules run on the parts an assembly stands for, so a pavilion is checked
+  // as posts, beams and a roof — which is what it is.
+  const elements = expandDesign(design);
 
   // --- Nothing placed yet -------------------------------------------------
-  if (elements.length === 0) {
+  if (design.elements.length === 0) {
     messages.push(
       message({
         code: "STUDIO_EMPTY",
@@ -118,6 +121,9 @@ export function evaluateStudioDesign(design: StudioDesign): StudioValidationResu
       const typeA = getElementType(a.typeId);
       const typeB = getElementType(b.typeId);
       if (!typeA?.solid || !typeB?.solid) continue;
+      // Posts within one pavilion are meant to be a bay apart; that is the
+      // design, not a circulation problem.
+      if (parentOf(a) && parentOf(a) === parentOf(b)) continue;
 
       const gap = gapBetween(a, b);
       if (gap > 0 && gap < MIN_CIRCULATION_MM) {
