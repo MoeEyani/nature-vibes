@@ -33,6 +33,7 @@ export const STORAGE_KEYS = {
   /** Design Studio — element-level designs. */
   studioDesign: "nv.studio.design.v1",
   studioSaved: "nv.studio.designs.v1",
+  studioClipboard: "nv.studio.clipboard.v1",
 } as const;
 
 /** Read-only, for migration. Never written to. */

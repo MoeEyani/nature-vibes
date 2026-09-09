@@ -301,7 +301,29 @@ export function evaluateStudioDesign(design: StudioDesign): StudioValidationResu
     }),
   );
 
-  const sorted = [...messages].sort(
+  // Findings are raised against the parts an assembly stands for, whose ids
+  // are synthetic and are not in `design.elements`. Reported as they are, a
+  // finding about a pavilion post would select nothing when clicked. Every id
+  // is mapped back to the element the customer can actually reach, once, here
+  // — so a rule added later cannot forget to do it.
+  const owner = new Map<string, string>();
+  for (const element of elements) {
+    const parent = parentOf(element);
+    if (parent) owner.set(element.id, parent);
+  }
+
+  const addressed = messages.map((entry) =>
+    entry.affectedIds && entry.affectedIds.length > 0
+      ? {
+          ...entry,
+          affectedIds: [
+            ...new Set(entry.affectedIds.map((id) => owner.get(id) ?? id)),
+          ],
+        }
+      : entry,
+  );
+
+  const sorted = [...addressed].sort(
     (a, b) => severityRank(b.severity) - severityRank(a.severity),
   );
   const blocking = sorted.filter((entry) => entry.severity === "incompatible");

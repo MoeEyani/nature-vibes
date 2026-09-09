@@ -81,5 +81,17 @@ export const savedStudioDesignSchema = z.object({
 });
 export type SavedStudioDesign = z.infer<typeof savedStudioDesignSchema>;
 
+/**
+ * The copy/paste clipboard, persisted so a selection can be carried from one
+ * saved design to another. Validated on read like everything else that comes
+ * back from storage: a stale or hand-edited entry has to degrade, not crash.
+ */
+export const studioClipboardSchema = z.object({
+  copiedAt: z.string(),
+  elements: z.array(studioElementSchema).max(200),
+});
+
+export type StudioClipboard = z.infer<typeof studioClipboardSchema>;
+
 export const DEFAULT_SITE: StudioSite = { widthMm: 8000, depthMm: 8000 };
 export const DEFAULT_GRID_MM = 100;

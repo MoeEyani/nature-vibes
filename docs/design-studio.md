@@ -1,7 +1,7 @@
 ---
 project: Nature Vibes
 document_type: Design Studio — element-level configuration
-version: 1.1
+version: 1.2
 date: 2026-09-09
 status: Delivered on branch claude/nature-vibes-design-studio
 ---
@@ -23,7 +23,7 @@ A three-pane workspace at `/studio`:
 
 | Pane | Contents |
 | --- | --- |
-| Left | The palette — 2 assemblies and 18 element types, in 8 groups |
+| Left | The palette — 5 assemblies and 18 element types, in 8 groups |
 | Centre | The 3D canvas |
 | Right | Properties of the selection, then a live summary |
 
@@ -50,12 +50,19 @@ selected element's own width, depth and height.
 250 / 500 mm), a site size, and an orientation gizmo.
 
 **Groups.** The first palette section, *Assemblies*, holds things that are made
-of other things: a **Pavilion** (posts, beams and a roof) and a **Seating
-Layout** (a bench run around a rectangle). Placing one adds a single element to
-the design; its parts follow from its settings. Change the span and the posts
-move with it, add a bay and a post appears, switch the roof style and only the
-roof changes. **Ungroup** turns it into loose elements when the customer wants
-to break the pattern.
+of other things — a Pavilion, a Seating Layout, a Planting Border, a Lighting
+Run, a Screen Wall. Placing one adds a single element to the design; its parts
+follow from its settings. Change the span and the posts move with it, add a bay
+and a post appears, switch the roof style and only the roof changes. **Ungroup**
+turns it into loose elements when the customer wants to break the pattern.
+
+**Selecting more than one.** Shift- or Ctrl/Cmd-click adds an element to the
+selection and clicking it again takes it back out; `Ctrl/Cmd+A` selects
+everything. Dragging any member moves the whole selection by the same delta, and
+rotate, duplicate, delete, nudge and finish all apply across it — each as **one**
+history step, so undo takes back the gesture rather than unpicking it element by
+element. `Ctrl/Cmd+C` and `Ctrl/Cmd+V` copy and paste, through a clipboard held
+in `localStorage` so a selection can be carried into a different saved design.
 
 ---
 
@@ -98,6 +105,26 @@ unless it introduces a genuinely new part.
 | --- | --- | --- |
 | Pavilion | span W/D, eave height, roof style, overhang, bays W/D, post section | Perimeter posts on the bay grid, four beams landing on the eave line, one roof |
 | Seating Layout | layout, span W/D, seat depth, seat height, style | One bench or lounge run per side of the chosen layout |
+| Planting Border | sides, span W/D, bed depth, bed height, planting density, planting height | A planter run per side, with planting spread evenly along each and standing on the soil |
+| Lighting Run | pattern, fixture, span W/D, counts, hanging or lantern height | Pendants or lanterns in a row, a grid, or around a perimeter |
+| Screen Wall | sides, style, span W/D, height | A screen, trellis or balustrade run per side |
+
+Seating, planting and screening all place a run along each side of a rectangle,
+and all three call the same `runsAroundRect` — including the inset that makes
+corners meet instead of overlapping. Three copies of that arithmetic is three
+chances to disagree about where a corner is.
+
+Two smaller mechanisms keep the controls honest, both declared as data so they
+stay generic:
+
+- **`showWhen`** on a parameter spec hides a control that could not do anything
+  — a hanging height means nothing to a floor lantern, and a slider that moves
+  without changing anything reads as a broken tool.
+- **`normalize`** on a deriver settles constraints *between* parameters, after
+  each has been clamped to its own range. A spec describes one control in
+  isolation, so it cannot say "a balustrade may not be 3 m tall even though a
+  screen may". Without it the slider sat at 3000 while the wall it built was
+  1300 — a control that lies is worse than one that is missing.
 
 The seating layouts are read from `shared/catalog/seating.ts` — the guided
 wizard's own list — so the two halves of the product cannot disagree about what
@@ -154,7 +181,7 @@ there is nothing there to select.
 
 ---
 
-## 3. Three decisions worth recording
+## 3. Four decisions worth recording
 
 ### Oriented-rectangle overlap, not bounding boxes
 
@@ -190,6 +217,18 @@ Storing only the parameters removes the class of bug rather than guarding
 against it. The cost is that parts are recomputed on demand — cheap here, since
 a design holds tens of elements, not thousands.
 
+### A press inside a selection must not collapse it
+
+Selecting the pressed element outright is the obvious implementation, and it
+quietly breaks group dragging: the selection collapses to one element before
+the drag begins, so dragging a group of six moves one and leaves five behind.
+
+A press *inside* the selection therefore leaves the selection alone, and
+`commitDrag` narrows it to the pressed element only if the gesture turned out
+to be a click. Both halves are tested, because the browser found this one and
+the store test did not — the store test called `beginMove` directly, which is
+exactly the step the scene was getting wrong.
+
 ---
 
 ## 4. Validation
@@ -217,7 +256,11 @@ anything.
 | `STUDIO_DATA_PLACEHOLDER` | warning | Always — sizes and prices are seed values |
 
 Each message carries the ids of the elements it concerns, so clicking a finding
-in the summary selects the element that caused it.
+in the summary selects the element that caused it. Findings raised against an
+assembly's derived parts are re-addressed to the assembly on the way out of the
+engine — a synthetic part id is not in `design.elements`, so a finding carrying
+one would select nothing when clicked. That mapping happens once, at the end of
+`evaluateStudioDesign`, so a rule added later cannot forget it.
 
 ---
 
@@ -247,8 +290,8 @@ real changes rather than through mouse movements.
 
 No quote flow from the studio, no conversion between a studio design and a
 wizard configuration, no re-grouping of exploded parts, no nesting of one
-assembly inside another, no multi-select, no copy/paste between designs, and no
-server-side validation of studio designs.
+assembly inside another, no marquee selection (shift-click and select-all
+instead), and no server-side validation of studio designs.
 The domain is already shaped for the last of those: `evaluateStudioDesign` and
 `calculateStudioPrice` are pure functions in `shared/`, which is what the
 trusted boundary imports from.

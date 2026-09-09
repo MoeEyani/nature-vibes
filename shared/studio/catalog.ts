@@ -46,6 +46,16 @@ export type SizeRange = { minMm: number; maxMm: number; stepMm: number };
  * The parameter specs live here, as data, so the properties panel can render
  * controls for any assembly without knowing what it is.
  */
+/**
+ * Show this control only while another parameter holds a given value.
+ *
+ * A control that silently does nothing is worse than one that is not there:
+ * a hanging height means nothing to a floor lantern, and a slider that moves
+ * without changing anything reads as a broken tool. Declared as data so the
+ * panel stays generic.
+ */
+export type AssemblyParamVisibility = { key: string; equals: string };
+
 export type AssemblyParamSpec =
   | {
       kind: "number";
@@ -56,12 +66,14 @@ export type AssemblyParamSpec =
       stepMm: number;
       /** `mm` shows a millimetre box; `count` shows a plain integer. */
       unit: "mm" | "count";
+      showWhen?: AssemblyParamVisibility;
     }
   | {
       kind: "choice";
       key: string;
       label: string;
       options: { value: string; label: string }[];
+      showWhen?: AssemblyParamVisibility;
     };
 
 export type AssemblyParams = Record<string, number | string>;
@@ -140,6 +152,21 @@ export function colorHex(colorId: string | undefined, fallback = "#6a6f71"): str
 const METAL = ["COL-MATTE-BLACK", "COL-BRONZE", "COL-STONE", "COL-WARM-WHITE"];
 const TIMBER = ["COL-TEAK", "COL-WALNUT", "COL-MATTE-BLACK", "COL-STONE"];
 const FABRIC = ["COL-SAND", "COL-OLIVE", "COL-TERRACOTTA", "COL-MATTE-BLACK"];
+
+/**
+ * Which sides of a rectangle an assembly builds along.
+ *
+ * Shared by the planting and screening assemblies. Seating deliberately does
+ * not use this: it reads the guided wizard's own layout list instead, so the
+ * two halves of the product cannot disagree about what a U-shape is.
+ */
+const SIDE_SET_OPTIONS = [
+  { value: "perimeter", label: "All four sides" },
+  { value: "three", label: "Three sides (U)" },
+  { value: "opposite", label: "Two opposite sides" },
+  { value: "corner", label: "Two sides (L)" },
+  { value: "one", label: "One side" },
+];
 
 const ROOF_STYLE_OPTIONS = [
   { value: "pyramid", label: "Pyramid" },
@@ -254,6 +281,196 @@ export const STUDIO_ELEMENT_TYPES: StudioElementType[] = [
         seatDepth: 550,
         seatHeight: 450,
         style: "bench",
+      },
+    },
+  },
+
+  {
+    id: "ASM-PLANTING",
+    sku: "STU-ASM-PLT",
+    kind: "planter",
+    group: "Assemblies",
+    name: "Planting Border",
+    description:
+      "Planter runs around a rectangle, with planting set into them. Change the sides or the bed and everything follows.",
+    defaultSize: { widthMm: 3000, depthMm: 3000, heightMm: 1350 },
+    resize: {},
+    defaultElevationMm: 0,
+    solid: false,
+    colorIds: TIMBER,
+    price: placeholder(0),
+    priceMode: "perUnit",
+    assetKey: "studio:assembly",
+    assembly: {
+      params: [
+        { kind: "choice", key: "sides", label: "Sides", options: SIDE_SET_OPTIONS },
+        { kind: "number", key: "spanW", label: "Span (width)", minMm: 1000, maxMm: 10000, stepMm: 100, unit: "mm" },
+        { kind: "number", key: "spanD", label: "Span (depth)", minMm: 1000, maxMm: 10000, stepMm: 100, unit: "mm" },
+        { kind: "number", key: "bedDepth", label: "Bed depth", minMm: 300, maxMm: 800, stepMm: 50, unit: "mm" },
+        { kind: "number", key: "bedHeight", label: "Bed height", minMm: 250, maxMm: 900, stepMm: 50, unit: "mm" },
+        {
+          kind: "choice",
+          key: "planting",
+          label: "Planting",
+          options: [
+            { value: "full", label: "Full — every 700 mm" },
+            { value: "low", label: "Sparse — every 1400 mm" },
+            { value: "none", label: "Empty beds" },
+          ],
+        },
+        {
+          kind: "number",
+          key: "plantHeight",
+          label: "Planting height",
+          minMm: 300,
+          maxMm: 2000,
+          stepMm: 50,
+          unit: "mm",
+          showWhen: { key: "planting", equals: "full" },
+        },
+      ],
+      defaults: {
+        sides: "perimeter",
+        spanW: 3000,
+        spanD: 3000,
+        bedDepth: 400,
+        bedHeight: 450,
+        planting: "full",
+        plantHeight: 900,
+      },
+    },
+  },
+  {
+    id: "ASM-LIGHTING",
+    sku: "STU-ASM-LGT",
+    kind: "light",
+    group: "Assemblies",
+    name: "Lighting Run",
+    description:
+      "Fixtures laid out in a row, a grid or around a perimeter, evenly spaced across the span you choose.",
+    defaultSize: { widthMm: 3000, depthMm: 300, heightMm: 2400 },
+    resize: {},
+    defaultElevationMm: 0,
+    solid: false,
+    colorIds: METAL,
+    price: placeholder(0),
+    priceMode: "perUnit",
+    assetKey: "studio:assembly",
+    assembly: {
+      params: [
+        {
+          kind: "choice",
+          key: "pattern",
+          label: "Pattern",
+          options: [
+            { value: "row", label: "A single row" },
+            { value: "grid", label: "A grid" },
+            { value: "perimeter", label: "Around a perimeter" },
+          ],
+        },
+        {
+          kind: "choice",
+          key: "fixture",
+          label: "Fixture",
+          options: [
+            { value: "pendant", label: "Pendant light" },
+            { value: "lantern", label: "Floor lantern" },
+          ],
+        },
+        { kind: "number", key: "spanW", label: "Span (width)", minMm: 500, maxMm: 10000, stepMm: 100, unit: "mm" },
+        {
+          kind: "number",
+          key: "spanD",
+          label: "Span (depth)",
+          minMm: 500,
+          maxMm: 10000,
+          stepMm: 100,
+          unit: "mm",
+          showWhen: { key: "pattern", equals: "grid" },
+        },
+        { kind: "number", key: "countW", label: "Fixtures across", minMm: 1, maxMm: 10, stepMm: 1, unit: "count" },
+        {
+          kind: "number",
+          key: "countD",
+          label: "Fixtures deep",
+          minMm: 1,
+          maxMm: 10,
+          stepMm: 1,
+          unit: "count",
+          showWhen: { key: "pattern", equals: "grid" },
+        },
+        {
+          kind: "number",
+          key: "mountHeight",
+          label: "Hanging height",
+          minMm: 1400,
+          maxMm: 3200,
+          stepMm: 50,
+          unit: "mm",
+          showWhen: { key: "fixture", equals: "pendant" },
+        },
+        {
+          kind: "number",
+          key: "lanternHeight",
+          label: "Lantern height",
+          minMm: 400,
+          maxMm: 1800,
+          stepMm: 50,
+          unit: "mm",
+          showWhen: { key: "fixture", equals: "lantern" },
+        },
+      ],
+      defaults: {
+        pattern: "row",
+        fixture: "pendant",
+        spanW: 3000,
+        spanD: 3000,
+        countW: 3,
+        countD: 3,
+        mountHeight: 2100,
+        lanternHeight: 900,
+      },
+    },
+  },
+  {
+    id: "ASM-SCREEN",
+    sku: "STU-ASM-SCR",
+    kind: "screen",
+    group: "Assemblies",
+    name: "Screen Wall",
+    description:
+      "Screens, trellises or balustrades along the sides you choose. Adds wind area — always escalated for review.",
+    defaultSize: { widthMm: 3000, depthMm: 3000, heightMm: 1900 },
+    resize: {},
+    defaultElevationMm: 0,
+    solid: false,
+    colorIds: TIMBER,
+    price: placeholder(0),
+    priceMode: "perUnit",
+    assetKey: "studio:assembly",
+    assembly: {
+      params: [
+        { kind: "choice", key: "sides", label: "Sides", options: SIDE_SET_OPTIONS },
+        {
+          kind: "choice",
+          key: "style",
+          label: "Style",
+          options: [
+            { value: "screen", label: "Slatted privacy screen" },
+            { value: "trellis", label: "Climbing trellis" },
+            { value: "balustrade", label: "Open balustrade" },
+          ],
+        },
+        { kind: "number", key: "spanW", label: "Span (width)", minMm: 1000, maxMm: 10000, stepMm: 100, unit: "mm" },
+        { kind: "number", key: "spanD", label: "Span (depth)", minMm: 1000, maxMm: 10000, stepMm: 100, unit: "mm" },
+        { kind: "number", key: "height", label: "Height", minMm: 700, maxMm: 3000, stepMm: 50, unit: "mm" },
+      ],
+      defaults: {
+        sides: "opposite",
+        style: "screen",
+        spanW: 3000,
+        spanD: 3000,
+        height: 1900,
       },
     },
   },

@@ -275,6 +275,38 @@ export function explodeAssembly(
 }
 
 /**
+ * Copy a set of elements into a design.
+ *
+ * Fresh ids, offset by one visible step so the copy does not hide under the
+ * original, and clamped to the site. The relative arrangement is preserved —
+ * pasting six elements that formed a corner must give back a corner, not six
+ * elements in a heap — so the whole set moves by one offset rather than each
+ * element being placed independently.
+ */
+export function pasteElements(
+  elements: StudioElement[],
+  design: StudioDesign,
+  offsetMm?: number,
+): StudioElement[] {
+  const offset = offsetMm ?? Math.max(design.gridMm, 100) * 2;
+
+  return elements
+    .filter((element) => Boolean(getElementType(element.typeId)))
+    .map((element) => {
+      const copy: StudioElement = {
+        ...element,
+        id: createElementId(),
+        x: element.x + offset,
+        z: element.z + offset,
+        locked: false,
+      };
+      // `parentId` marks a derived part. A pasted element is its own thing.
+      delete (copy as { parentId?: string }).parentId;
+      return { ...copy, ...clampToSite(copy, design.site) };
+    });
+}
+
+/**
  * Re-apply the domain invariants to a design that came from storage: drop
  * unknown types, and pull every element back inside its permitted ranges.
  */

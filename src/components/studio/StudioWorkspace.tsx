@@ -75,15 +75,32 @@ function useKeyboardShortcuts() {
       if (isTyping(event.target)) return;
 
       const store = useStudioStore.getState();
-      const id = store.selectedId;
       const step = store.design.gridMm || 100;
+      const modifier = event.metaKey || event.ctrlKey;
 
-      // History first — these work with nothing selected.
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
-        event.preventDefault();
-        if (event.shiftKey) store.redo();
-        else store.undo();
-        return;
+      // History and clipboard first — these work with nothing selected.
+      if (modifier) {
+        switch (event.key.toLowerCase()) {
+          case "z":
+            event.preventDefault();
+            if (event.shiftKey) store.redo();
+            else store.undo();
+            return;
+          case "a":
+            event.preventDefault();
+            store.selectAll();
+            return;
+          case "c":
+            event.preventDefault();
+            store.copySelection();
+            return;
+          case "v":
+            event.preventDefault();
+            store.paste();
+            return;
+          default:
+            return;
+        }
       }
 
       if (event.key === "Escape") {
@@ -92,37 +109,40 @@ function useKeyboardShortcuts() {
         return;
       }
 
-      if (!id) return;
+      // Everything below acts on the whole selection, so one element and six
+      // behave the same way rather than the shortcuts quietly meaning less
+      // once more than one thing is selected.
+      if (store.selectedIds.length === 0) return;
 
       switch (event.key) {
         case "Delete":
         case "Backspace":
           event.preventDefault();
-          store.remove(id);
+          store.removeSelection();
           break;
         case "ArrowLeft":
           event.preventDefault();
-          store.nudge(id, -step, 0);
+          store.nudgeSelection(-step, 0);
           break;
         case "ArrowRight":
           event.preventDefault();
-          store.nudge(id, step, 0);
+          store.nudgeSelection(step, 0);
           break;
         case "ArrowUp":
           event.preventDefault();
-          store.nudge(id, 0, -step);
+          store.nudgeSelection(0, -step);
           break;
         case "ArrowDown":
           event.preventDefault();
-          store.nudge(id, 0, step);
+          store.nudgeSelection(0, step);
           break;
         case "r":
         case "R":
-          store.rotate(id, event.shiftKey ? -45 : 45);
+          store.rotateSelection(event.shiftKey ? -45 : 45);
           break;
         case "d":
         case "D":
-          store.duplicate(id);
+          store.duplicateSelection();
           break;
         default:
           break;

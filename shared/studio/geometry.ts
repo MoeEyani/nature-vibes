@@ -1,5 +1,6 @@
 import type { StudioDesign, StudioElement, StudioSite } from "./schema.ts";
 import { getElementType } from "./catalog.ts";
+import { clamp, snap } from "../lib/num.ts";
 import { expandDesign, parentOf } from "./assemblies.ts";
 
 /**
@@ -19,15 +20,11 @@ export type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
 
 const DEG_TO_RAD = Math.PI / 180;
 
-/** Snap a value to the nearest multiple of `step`. A step of 0 disables it. */
-export function snap(value: number, step: number): number {
-  if (!step || step <= 0) return Math.round(value);
-  return Math.round(value / step) * step;
-}
-
-export function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
+// `snap` and `clamp` are pure arithmetic and live in `shared/lib/num.ts`, so
+// that assemblies.ts can use them without importing this module — geometry
+// already imports assemblies, and the other direction would close the cycle.
+// Re-exported here because this is where the studio already reaches for them.
+export { clamp, snap };
 
 /** The element's four ground-plane corners, accounting for its rotation. */
 export function footprint(element: StudioElement): Footprint {

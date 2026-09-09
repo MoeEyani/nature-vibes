@@ -9,7 +9,7 @@ import {
 } from "@shared/studio/catalog";
 import { deriveParts, resolveParams } from "@shared/studio/assemblies";
 import { estimateAquarium } from "@shared/aquarium/volume";
-import type { StudioElement } from "@shared/studio/schema";
+import type { StudioDesign, StudioElement } from "@shared/studio/schema";
 import { useStudioStore } from "@/store/useStudioStore";
 import { formatCurrency, formatKilograms, formatLitres } from "@/lib/format";
 import { priceElementLines } from "@shared/studio/pricing";
@@ -27,6 +27,7 @@ import { cn } from "@/components/ui/cn";
  */
 export function StudioProperties() {
   const design = useStudioStore((state) => state.design);
+  const selectedIds = useStudioStore((state) => state.selectedIds);
   const selectedId = useStudioStore((state) => state.selectedId);
   const element = design.elements.find((entry) => entry.id === selectedId);
 
@@ -40,14 +41,158 @@ export function StudioProperties() {
         </p>
         <ul className="mt-4 space-y-1.5 text-xs text-ink-subtle">
           <li>Drag an element to move it</li>
+          <li>Shift-click to select more than one</li>
           <li>Arrow keys nudge · R rotates · D duplicates</li>
+          <li>Ctrl/⌘ + A selects all · C copies · V pastes</li>
           <li>Delete removes · Escape deselects</li>
         </ul>
       </div>
     );
   }
 
+  if (selectedIds.length > 1) {
+    return <MultiSelectionProperties ids={selectedIds} design={design} />;
+  }
+
   return <ElementProperties key={element.id} element={element} />;
+}
+
+/**
+ * What can honestly be edited across a mixed selection.
+ *
+ * Not width, depth or height: each type has its own permitted range, so one
+ * slider across a bench and a pendant would either mean nothing or quietly
+ * clamp differently for each. Position, rotation, finish and the whole-set
+ * operations do apply to everything, so those are what is offered.
+ */
+function MultiSelectionProperties({
+  ids,
+  design,
+}: {
+  ids: string[];
+  design: StudioDesign;
+}) {
+  const rotateSelection = useStudioStore((state) => state.rotateSelection);
+  const patchSelection = useStudioStore((state) => state.patchSelection);
+  const duplicateSelection = useStudioStore((state) => state.duplicateSelection);
+  const removeSelection = useStudioStore((state) => state.removeSelection);
+  const copySelection = useStudioStore((state) => state.copySelection);
+  const paste = useStudioStore((state) => state.paste);
+  const select = useStudioStore((state) => state.select);
+
+  const elements = design.elements.filter((entry) => ids.includes(entry.id));
+  const lines = elements.flatMap(priceElementLines);
+  const total = lines.reduce((sum, line) => sum + line.subtotal, 0);
+  const locked = elements.filter((entry) => entry.locked).length;
+
+  // A finish can only be offered where every selected element accepts it.
+  const sharedColorIds = elements.reduce<string[]>((shared, entry, index) => {
+    const colorIds = getElementType(entry.typeId)?.colorIds ?? [];
+    return index === 0 ? [...colorIds] : shared.filter((id) => colorIds.includes(id));
+  }, []);
+
+  const counts = new Map<string, number>();
+  for (const entry of elements) {
+    const name = getElementType(entry.typeId)?.name ?? entry.typeId;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+
+  return (
+    <div>
+      <div className="border-b border-line px-4 py-3">
+        <h2 className="eyebrow text-ink-muted">Properties</h2>
+        <p className="mt-1 font-medium text-ink">{elements.length} elements selected</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-ink-subtle">
+          {[...counts.entries()]
+            .map(([name, count]) => (count > 1 ? `${name} × ${count}` : name))
+            .join(" · ")}
+          {locked > 0 ? ` · ${locked} locked and left alone` : null}
+        </p>
+      </div>
+
+      <div className="space-y-5 p-4">
+        <section>
+          <h3 className="eyebrow mb-2 text-ink-subtle">Rotation</h3>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => rotateSelection(-45)}>
+              −45°
+            </Button>
+            <span className="min-w-14 text-center text-xs text-ink-subtle">each</span>
+            <Button size="sm" variant="secondary" onClick={() => rotateSelection(45)}>
+              +45°
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-ink-subtle">
+            Each element turns on its own centre, so the arrangement stays put.
+          </p>
+        </section>
+
+        {sharedColorIds.length > 1 ? (
+          <section>
+            <h3 className="eyebrow mb-2 text-ink-subtle">Finish</h3>
+            <div className="flex flex-wrap gap-2">
+              {sharedColorIds.map((colorId) => {
+                const color = STUDIO_COLOR_INDEX[colorId];
+                if (!color) return null;
+                return (
+                  <button
+                    key={colorId}
+                    type="button"
+                    title={color.name}
+                    aria-label={color.name}
+                    onClick={() => patchSelection({ colorId })}
+                    className="size-9 rounded-lg border-2 border-line transition-transform hover:scale-105"
+                    style={{ backgroundColor: color.hex }}
+                  />
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-ink-subtle">
+              Only finishes every selected element offers are shown.
+            </p>
+          </section>
+        ) : (
+          <p className="text-xs text-ink-subtle">
+            These elements share no finish, so there is nothing to apply to all
+            of them at once.
+          </p>
+        )}
+
+        {lines.length > 0 ? (
+          <div className="rounded-card border border-line bg-sand/30 p-3 text-sm">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-ink-muted">This selection</span>
+              <span className="font-medium tabular-nums text-ink">
+                {formatCurrency(total)}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-ink-subtle">
+              {lines.length} line {lines.length === 1 ? "item" : "items"} ·
+              placeholder prices
+            </p>
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2 border-t border-line pt-4">
+          <Button size="sm" variant="secondary" onClick={() => duplicateSelection()}>
+            Duplicate
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => copySelection()}>
+            Copy
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => paste()}>
+            Paste
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => select(null)}>
+            Deselect
+          </Button>
+          <Button size="sm" variant="danger" onClick={() => removeSelection()}>
+            Delete
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ElementProperties({ element }: { element: StudioElement }) {
@@ -56,6 +201,7 @@ function ElementProperties({ element }: { element: StudioElement }) {
   const remove = useStudioStore((state) => state.remove);
   const rotate = useStudioStore((state) => state.rotate);
   const explode = useStudioStore((state) => state.explode);
+  const copySelection = useStudioStore((state) => state.copySelection);
 
   const type = getElementType(element.typeId);
   if (!type) return null;
@@ -284,6 +430,9 @@ function ElementProperties({ element }: { element: StudioElement }) {
           <Button size="sm" variant="secondary" onClick={() => duplicate(element.id)}>
             Duplicate
           </Button>
+          <Button size="sm" variant="secondary" onClick={() => copySelection()}>
+            Copy
+          </Button>
           {assembly ? (
             <Button
               size="sm"
@@ -397,7 +546,15 @@ function AssemblySection({
     <section>
       <h3 className="eyebrow mb-2 text-ink-subtle">Group</h3>
       <div className="space-y-3">
-        {spec.map((param) =>
+        {spec
+          .filter(
+            // A control that cannot affect anything is worse than one that is
+            // not there: a hanging height means nothing to a floor lantern.
+            (param) =>
+              !param.showWhen ||
+              String(params[param.showWhen.key]) === param.showWhen.equals,
+          )
+          .map((param) =>
           param.kind === "choice" ? (
             <div key={param.key}>
               <label

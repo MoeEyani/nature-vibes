@@ -80,6 +80,7 @@ function SceneContents({
 }) {
   const placingTypeId = useStudioStore((state) => state.placingTypeId);
   const movingId = useStudioStore((state) => state.movingId);
+  const selectedIds = useStudioStore((state) => state.selectedIds);
   const showDimensions = useStudioStore((state) => state.showDimensions);
 
   const isDragging = Boolean(placingTypeId || movingId);
@@ -129,7 +130,13 @@ function SceneContents({
           key={element.id}
           element={element}
           colliding={collidingIds.has(element.id)}
-          hidden={movingId === element.id}
+          // Everything being dragged is hidden, not just the pressed element:
+          // a multi-selection moves together, so it has to preview together.
+          hidden={
+            Boolean(movingId) &&
+            (movingId === element.id ||
+              (selectedIds.includes(movingId!) && selectedIds.includes(element.id)))
+          }
         />
       ))}
 
@@ -309,6 +316,48 @@ function SiteOutline({ design }: { design: StudioDesign }) {
   );
 }
 
+/** Shift or Ctrl/Cmd held: add to or remove from the selection. */
+function isAdditive(event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) {
+  return event.shiftKey || event.ctrlKey || event.metaKey;
+}
+
+/**
+ * What pressing an element does.
+ *
+ * The subtle case is pressing an element that is *already* part of a
+ * multi-selection. Selecting it outright — the obvious thing — collapses the
+ * selection to one element before the drag has even begun, so a group drag
+ * silently moves a single item. So a press inside the selection leaves the
+ * selection alone; `commitDrag` narrows it to the pressed element if the
+ * gesture turns out to have been a click rather than a drag.
+ */
+function press({
+  element,
+  isSelected,
+  event,
+  select,
+  beginMove,
+}: {
+  element: StudioElement;
+  isSelected: boolean;
+  event: PointerEvent;
+  select: (id: string | null, additive?: boolean) => void;
+  beginMove: (id: string) => void;
+}) {
+  if (isAdditive(event)) {
+    // A modifier press only edits the selection; starting a move as well
+    // would drag the element the customer was picking.
+    select(element.id, true);
+    return;
+  }
+
+  if (!isSelected) select(element.id);
+  if (!element.locked) {
+    beginMove(element.id);
+    document.body.style.cursor = "grabbing";
+  }
+}
+
 function PlacedElement({
   element,
   colliding,
@@ -318,13 +367,13 @@ function PlacedElement({
   colliding: boolean;
   hidden: boolean;
 }) {
-  const selectedId = useStudioStore((state) => state.selectedId);
+  const selectedIds = useStudioStore((state) => state.selectedIds);
   const hoveredId = useStudioStore((state) => state.hoveredId);
   const select = useStudioStore((state) => state.select);
   const hover = useStudioStore((state) => state.hover);
   const beginMove = useStudioStore((state) => state.beginMove);
 
-  const isSelected = selectedId === element.id;
+  const isSelected = selectedIds.includes(element.id);
   const isHovered = hoveredId === element.id;
 
   const assembly = isAssembly(element);
@@ -367,11 +416,7 @@ function PlacedElement({
           event.stopPropagation();
           // Pressing any part selects the assembly, never the part: the parts
           // do not exist as far as the design is concerned.
-          select(element.id);
-          if (!element.locked) {
-            beginMove(element.id);
-            document.body.style.cursor = "grabbing";
-          }
+          press({ element, isSelected, event: event.nativeEvent, select, beginMove });
         }}
       >
         {parts.map((partElement) => (
@@ -411,11 +456,7 @@ function PlacedElement({
       }}
       onPointerDown={(event) => {
         event.stopPropagation();
-        select(element.id);
-        if (!element.locked) {
-          beginMove(element.id);
-          document.body.style.cursor = "grabbing";
-        }
+        press({ element, isSelected, event: event.nativeEvent, select, beginMove });
       }}
     >
       <ElementGeometry element={element} />
@@ -467,58 +508,76 @@ function SelectionBox({
 function DragPreview({ design }: { design: StudioDesign }) {
   const placingTypeId = useStudioStore((state) => state.placingTypeId);
   const movingId = useStudioStore((state) => state.movingId);
+  const selectedIds = useStudioStore((state) => state.selectedIds);
+  const moveOrigin = useStudioStore((state) => state.moveOrigin);
   const ghost = useStudioStore((state) => state.ghost);
 
-  const preview = useMemo<StudioElement | null>(() => {
-    if (!ghost) return null;
+  const preview = useMemo<StudioElement[]>(() => {
+    if (!ghost) return [];
 
     if (movingId) {
-      const element = design.elements.find((entry) => entry.id === movingId);
-      return element ? { ...element, x: ghost.x, z: ghost.z } : null;
+      if (!moveOrigin) return [];
+      const dx = ghost.x - moveOrigin.x;
+      const dz = ghost.z - moveOrigin.z;
+      // The whole selection previews, offset by the same delta the commit will
+      // apply — otherwise a group drag shows one element moving and then five
+      // more jump when you let go.
+      const moving = selectedIds.includes(movingId) ? selectedIds : [movingId];
+
+      return design.elements
+        .filter((entry) => moving.includes(entry.id) && !entry.locked)
+        .map((entry) => ({ ...entry, x: entry.x + dx, z: entry.z + dz }));
     }
 
     if (placingTypeId) {
       const type = getElementType(placingTypeId);
-      if (!type) return null;
-      return {
-        id: "__preview__",
-        typeId: placingTypeId,
-        x: ghost.x,
-        z: ghost.z,
-        rotationDeg: 0,
-        widthMm: type.defaultSize.widthMm,
-        depthMm: type.defaultSize.depthMm,
-        heightMm: type.defaultSize.heightMm,
-        elevationMm: type.defaultElevationMm,
-        colorId: type.colorIds[0],
-        locked: false,
-      };
+      if (!type) return [];
+      return [
+        {
+          id: "__preview__",
+          typeId: placingTypeId,
+          x: ghost.x,
+          z: ghost.z,
+          rotationDeg: 0,
+          widthMm: type.defaultSize.widthMm,
+          depthMm: type.defaultSize.depthMm,
+          heightMm: type.defaultSize.heightMm,
+          elevationMm: type.defaultElevationMm,
+          colorId: type.colorIds[0],
+          locked: false,
+        },
+      ];
     }
-    return null;
-  }, [design.elements, ghost, movingId, placingTypeId]);
+    return [];
+  }, [design.elements, ghost, moveOrigin, movingId, placingTypeId, selectedIds]);
 
-  if (!preview) return null;
-
-  const rect = bounds(preview);
-  const width = rect.maxX - rect.minX;
-  const depth = rect.maxZ - rect.minZ;
+  if (preview.length === 0) return null;
 
   return (
     <group>
-      <group
-        position={[preview.x * MM, preview.elevationMm * MM, preview.z * MM]}
-        rotation={[0, -preview.rotationDeg * (Math.PI / 180), 0]}
-      >
-        <PreviewGhost element={preview} />
-      </group>
-      {/* Drop target pad on the ground, at the snapped position. */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[preview.x * MM, 0.008, preview.z * MM]}
-      >
-        <planeGeometry args={[width * MM, depth * MM]} />
-        <meshBasicMaterial color="#1d5138" transparent opacity={0.28} />
-      </mesh>
+      {preview.map((entry) => {
+        const rect = bounds(entry);
+        return (
+          <group key={entry.id}>
+            <group
+              position={[entry.x * MM, entry.elevationMm * MM, entry.z * MM]}
+              rotation={[0, -entry.rotationDeg * (Math.PI / 180), 0]}
+            >
+              <PreviewGhost element={entry} />
+            </group>
+            {/* Drop target pad on the ground, at the snapped position. */}
+            <mesh
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[entry.x * MM, 0.008, entry.z * MM]}
+            >
+              <planeGeometry
+                args={[(rect.maxX - rect.minX) * MM, (rect.maxZ - rect.minZ) * MM]}
+              />
+              <meshBasicMaterial color="#1d5138" transparent opacity={0.28} />
+            </mesh>
+          </group>
+        );
+      })}
     </group>
   );
 }

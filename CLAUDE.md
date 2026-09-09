@@ -72,6 +72,21 @@ Breaking any of these silently undoes a previous round.
   zero price of their own, so a forgotten expansion shows up as an obviously
   wrong total rather than a plausible one. Parts sharing a parent are excluded
   from collision and circulation.
+- **Assemblies that build along the sides of a rectangle share
+  `runsAroundRect`.** Seating, planting and screening all use it, corner inset
+  included. A second copy of that arithmetic is a second opinion on where a
+  corner is.
+- **A control that cannot do anything must not be shown, and must not lie.**
+  `showWhen` on a parameter spec hides a control the current settings make
+  meaningless; `normalize` on a deriver settles constraints *between*
+  parameters so the stored value always equals the one that gets built.
+- **A press inside a multi-selection does not collapse it.** Selecting the
+  pressed element outright breaks group dragging — the selection narrows to one
+  before the drag starts. `commitDrag` narrows it instead, and only when the
+  gesture turned out to be a click.
+- **Rule findings are addressed to selectable elements.** `evaluateStudioDesign`
+  maps every `affectedIds` entry from a derived part back to its assembly on the
+  way out. A synthetic part id selects nothing when the finding is clicked.
 - **Studio drag tracking intersects the `y = 0` plane mathematically.** Never
   raycast against the floor mesh: the ray hits whatever is already placed and
   the drop is lost. And test "is the pointer over the canvas" by coordinates,

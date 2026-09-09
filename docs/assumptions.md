@@ -198,12 +198,18 @@ composition* are placeholder data too — not just its numbers.
 | Beam depth 160 mm, top landing on the eave line | **Assumption** | Visual convention. Real beam depth follows from the span and is not calculated here |
 | Five roof styles and their peak heights (pyramid 700, flat 160, gable 800, pergola 220, louvered 240 mm) | **Assumption** | Massing only. No drainage fall, structure, fixing or wind design is implied |
 | Roof prices per m² (1,600–3,800 SAR) | **Assumption** | Placeholder seed values like every other price |
-| Seating run inset — side runs shortened by one seat depth at each end | **Assumption** | So corners meet in the demo geometry. Not a joinery detail |
+| Seating run inset — side runs shortened by one run depth at each end | **Assumption** | So corners meet in the demo geometry. Not a joinery detail. Shared by seating, planting and screening |
 | Lounge seat height taken as 55% of overall height | **Assumption** | A property of the placeholder geometry, not an ergonomic standard |
+| Planting density — 700 mm full, 1400 mm sparse | **Assumption** | A spacing that looks right in the demo. Real spacing depends on species, mature spread and irrigation, none of which is modelled |
+| Planting sized to the bed depth less 100 mm | **Assumption** | So foliage sits inside its planter in the 3D view. Not a horticultural rule |
+| Lighting spacing — fixtures spread evenly across the span | **Assumption** | A layout convention. No lux level, beam angle, spill or uniformity is calculated anywhere in this app |
+| Screen wall heights held to each style's own palette range | **Assumption** | Keeps the assembly from building something the palette itself refuses. The ranges are placeholder values |
 
 A derived pavilion is **not** an engineered structure. It is a massing study
 priced from a placeholder bill of materials, and every structural conclusion
-about it remains `review_required`.
+about it remains `review_required`. The same holds for the other assemblies: a
+Lighting Run is a layout, not a lighting design, and a Screen Wall still raises
+the wind-load review a single screen raises.
 
 ## 12. 3D
 

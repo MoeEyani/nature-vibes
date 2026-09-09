@@ -8,7 +8,9 @@ import {
   isAssembly,
   parentOf,
   resolveParams,
+  runsAroundRect,
   sidesForLayout,
+  sidesForSet,
 } from "@shared/studio/assemblies";
 import {
   STUDIO_ELEMENT_TYPES,
@@ -29,6 +31,7 @@ import {
   priceElementLines,
 } from "@shared/studio/pricing";
 import { evaluateStudioDesign } from "@shared/studio/rules";
+import { pasteElements } from "@shared/studio/design";
 import { studioDesignSchema } from "@shared/studio/schema";
 import type { StudioDesign, StudioElement } from "@shared/studio/schema";
 
@@ -428,5 +431,304 @@ describe("ungrouping", () => {
     const chair = place(design, "EL-CHAIR");
     expect(isAssemblyType(chair.typeId)).toBe(false);
     expect(explodeAssembly(chair, design)).toEqual([chair]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Tier 2 assemblies
+ * ------------------------------------------------------------------ */
+
+describe("runs around a rectangle", () => {
+  it("gives the sides of the named set", () => {
+    expect(sidesForSet("perimeter")).toHaveLength(4);
+    expect(sidesForSet("three")).toHaveLength(3);
+    expect(sidesForSet("one")).toEqual(["north"]);
+    // An unknown set must not silently produce nothing at all.
+    expect(sidesForSet("nonsense")).toHaveLength(4);
+  });
+
+  it("shortens the side runs so corners meet rather than overlap", () => {
+    const runs = runsAroundRect(sidesForSet("perimeter"), 4000, 3000, 500);
+    const north = runs.find((run) => run.side === "north");
+    const east = runs.find((run) => run.side === "east");
+
+    expect(north?.lengthMm).toBe(4000);
+    expect(east?.lengthMm).toBe(3000 - 500 * 2);
+    expect(east?.rotationDeg).toBe(90);
+    expect(north?.z).toBe(-3000 / 2 + 500 / 2);
+  });
+
+  it("never produces a zero-length run, however thin the rectangle", () => {
+    for (const run of runsAroundRect(sidesForSet("perimeter"), 1000, 1000, 800)) {
+      expect(run.lengthMm).toBeGreaterThan(0);
+    }
+  });
+
+  it("is the one implementation — seating, planting and screening agree", () => {
+    const design = createEmptyDesign();
+    const seating = place(design, "ASM-SEATING");
+    const planting = place(design, "ASM-PLANTING", 6000, 0);
+
+    // Both at a 3000 span with their own run depth: the north run spans the
+    // full width in each, because they share the same geometry.
+    const bench = deriveParts(seating).find((entry) => entry.id.endsWith("north"));
+    const bed = deriveParts(planting).find((entry) => entry.id.endsWith("bed-north"));
+    expect(bench?.widthMm).toBe(3000);
+    expect(bed?.widthMm).toBe(3000);
+  });
+});
+
+describe("planting border", () => {
+  it("derives a bed per side and planting inside each", () => {
+    const design = createEmptyDesign();
+    const planting = place(design, "ASM-PLANTING");
+    const parts = deriveParts(planting);
+
+    expect(parts.filter((e) => e.typeId === "EL-PLANTER")).toHaveLength(4);
+    expect(parts.filter((e) => e.typeId === "EL-PLANT").length).toBeGreaterThan(0);
+  });
+
+  it("sits the planting on the soil, not on the floor", () => {
+    const design = createEmptyDesign();
+    let planting = place(design, "ASM-PLANTING");
+    planting = patch(design, planting, { bedHeight: 600 });
+
+    const plants = deriveParts(planting).filter((e) => e.typeId === "EL-PLANT");
+    expect(plants.length).toBeGreaterThan(0);
+    expect(plants.every((plant) => plant.elevationMm === 600)).toBe(true);
+  });
+
+  it("keeps the planting inside the bed it grows in", () => {
+    const design = createEmptyDesign();
+    let planting = place(design, "ASM-PLANTING");
+    planting = patch(design, planting, { bedDepth: 300 });
+
+    const plants = deriveParts(planting).filter((e) => e.typeId === "EL-PLANT");
+    for (const plant of plants) expect(plant.widthMm).toBeLessThanOrEqual(300);
+  });
+
+  it("thins out on sparse and empties completely on none", () => {
+    const design = createEmptyDesign();
+    let planting = place(design, "ASM-PLANTING");
+    const full = deriveParts(planting).filter((e) => e.typeId === "EL-PLANT").length;
+
+    planting = patch(design, planting, { planting: "low" });
+    const low = deriveParts(planting).filter((e) => e.typeId === "EL-PLANT").length;
+
+    planting = patch(design, planting, { planting: "none" });
+    const none = deriveParts(planting);
+
+    expect(low).toBeLessThan(full);
+    expect(low).toBeGreaterThan(0);
+    expect(none.filter((e) => e.typeId === "EL-PLANT")).toHaveLength(0);
+    // The beds themselves stay.
+    expect(none.filter((e) => e.typeId === "EL-PLANTER")).toHaveLength(4);
+  });
+
+  it("does not report its own beds as colliding", () => {
+    const design = createEmptyDesign();
+    place(design, "ASM-PLANTING");
+    expect(findCollisions(design)).toHaveLength(0);
+  });
+
+  it("drops the planting height from its footprint when there is no planting", () => {
+    const design = createEmptyDesign();
+    let planting = place(design, "ASM-PLANTING");
+    const planted = planting.heightMm;
+    planting = patch(design, planting, { planting: "none" });
+
+    expect(planting.heightMm).toBeLessThan(planted);
+    expect(planting.heightMm).toBe(450);
+  });
+});
+
+describe("lighting run", () => {
+  it("lays a row of the requested count", () => {
+    const design = createEmptyDesign();
+    let lighting = place(design, "ASM-LIGHTING");
+    lighting = patch(design, lighting, { countW: 5 });
+
+    const parts = deriveParts(lighting);
+    expect(parts).toHaveLength(5);
+    expect(parts.every((entry) => entry.typeId === "EL-PENDANT")).toBe(true);
+    expect(parts.every((entry) => entry.z === lighting.z)).toBe(true);
+  });
+
+  it("multiplies out into a grid", () => {
+    const design = createEmptyDesign();
+    let lighting = place(design, "ASM-LIGHTING");
+    lighting = patch(design, lighting, { pattern: "grid", countW: 3, countD: 4 });
+    expect(deriveParts(lighting)).toHaveLength(12);
+  });
+
+  it("puts one fixture at each perimeter corner, not two", () => {
+    const design = createEmptyDesign();
+    let lighting = place(design, "ASM-LIGHTING");
+    lighting = patch(design, lighting, { pattern: "perimeter", countW: 3 });
+
+    const parts = deriveParts(lighting);
+    const places = parts.map((entry) => `${entry.x},${entry.z}`);
+    // A duplicate at a corner would look like one light and price as two.
+    expect(new Set(places).size).toBe(places.length);
+  });
+
+  it("hangs pendants and stands lanterns on the floor", () => {
+    const design = createEmptyDesign();
+    let lighting = place(design, "ASM-LIGHTING");
+    lighting = patch(design, lighting, { mountHeight: 2400 });
+    expect(deriveParts(lighting).every((e) => e.elevationMm === 2400)).toBe(true);
+
+    lighting = patch(design, lighting, { fixture: "lantern", lanternHeight: 1200 });
+    const lanterns = deriveParts(lighting);
+    expect(lanterns.every((e) => e.typeId === "EL-FLOOR-LAMP")).toBe(true);
+    expect(lanterns.every((e) => e.elevationMm === 0)).toBe(true);
+    expect(lanterns.every((e) => e.heightMm === 1200)).toBe(true);
+  });
+
+  it("declares the controls that would do nothing as conditional", () => {
+    const spec = getElementType("ASM-LIGHTING")?.assembly?.params ?? [];
+    const mount = spec.find((entry) => entry.key === "mountHeight");
+    const lantern = spec.find((entry) => entry.key === "lanternHeight");
+
+    expect(mount?.showWhen).toEqual({ key: "fixture", equals: "pendant" });
+    expect(lantern?.showWhen).toEqual({ key: "fixture", equals: "lantern" });
+  });
+
+  it("carries the electrical review finding through to the design", () => {
+    const design = createEmptyDesign();
+    place(design, "ASM-LIGHTING");
+    const codes = evaluateStudioDesign(design).messages.map((m) => m.code);
+    expect(codes).toContain("STUDIO_POWER_SUPPLY");
+  });
+});
+
+describe("screen wall", () => {
+  it("builds a panel per chosen side", () => {
+    const design = createEmptyDesign();
+    let screen = place(design, "ASM-SCREEN");
+    expect(deriveParts(screen)).toHaveLength(2);
+
+    screen = patch(design, screen, { sides: "perimeter" });
+    expect(deriveParts(screen)).toHaveLength(4);
+  });
+
+  it("swaps the part for the chosen style", () => {
+    const design = createEmptyDesign();
+    let screen = place(design, "ASM-SCREEN");
+    expect(deriveParts(screen).every((e) => e.typeId === "EL-SCREEN")).toBe(true);
+
+    screen = patch(design, screen, { style: "trellis" });
+    expect(deriveParts(screen).every((e) => e.typeId === "EL-TRELLIS")).toBe(true);
+
+    screen = patch(design, screen, { style: "balustrade" });
+    expect(deriveParts(screen).every((e) => e.typeId === "EL-BALUSTRADE")).toBe(true);
+  });
+
+  it("never builds a panel taller than the palette would allow for that style", () => {
+    const design = createEmptyDesign();
+    let screen = place(design, "ASM-SCREEN");
+    screen = patch(design, screen, { style: "balustrade", height: 3000 });
+
+    const max = getElementType("EL-BALUSTRADE")?.resize.height?.maxMm ?? 0;
+    expect(max).toBeLessThan(3000);
+    for (const panel of deriveParts(screen)) {
+      expect(panel.heightMm).toBeLessThanOrEqual(max);
+    }
+    // And the footprint agrees with what was actually built.
+    expect(screen.heightMm).toBe(max);
+    // As does the stored parameter, so the slider cannot sit at 3000 while the
+    // wall it describes is 1300.
+    expect(screen.params?.height).toBe(max);
+  });
+
+  it("keeps the height honest across a style change", () => {
+    const design = createEmptyDesign();
+    let screen = place(design, "ASM-SCREEN");
+    screen = patch(design, screen, { style: "screen", height: 2800 });
+    expect(screen.params?.height).toBe(2800);
+
+    // Switching to a style that cannot be that tall must bring the stored
+    // value down with it, not leave the control describing something else.
+    screen = patch(design, screen, { style: "balustrade" });
+    const max = getElementType("EL-BALUSTRADE")?.resize.height?.maxMm ?? 0;
+    expect(screen.params?.height).toBe(max);
+    expect(screen.heightMm).toBe(max);
+  });
+
+  it("raises the wind-load review the loose screen raises", () => {
+    const design = createEmptyDesign();
+    place(design, "ASM-SCREEN");
+    const codes = evaluateStudioDesign(design).messages.map((m) => m.code);
+    expect(codes).toContain("STUDIO_WIND_LOAD");
+  });
+});
+
+describe("findings address something selectable", () => {
+  it("reports a pavilion, not one of its derived posts", () => {
+    const design = createEmptyDesign();
+    const pavilion = place(design, "ASM-PAVILION");
+    const corner = deriveParts(pavilion).find((entry) => entry.typeId === "EL-POST");
+    if (!corner) throw new Error("no post derived");
+    const loose = place(design, "EL-POST", corner.x, corner.z);
+
+    const overlap = evaluateStudioDesign(design).messages.find(
+      (entry) => entry.code === "STUDIO_OVERLAP",
+    );
+    expect(overlap).toBeDefined();
+    expect(overlap?.affectedIds).toContain(pavilion.id);
+    expect(overlap?.affectedIds).toContain(loose.id);
+    // A synthetic part id would select nothing when the finding is clicked.
+    const ids = design.elements.map((entry) => entry.id);
+    for (const id of overlap?.affectedIds ?? []) expect(ids).toContain(id);
+  });
+});
+
+describe("copying elements", () => {
+  it("gives fresh ids and offsets the copy off the original", () => {
+    const design = createEmptyDesign();
+    const chair = place(design, "EL-CHAIR");
+    const [copy] = pasteElements([chair], design);
+
+    expect(copy.id).not.toBe(chair.id);
+    expect(copy.typeId).toBe(chair.typeId);
+    expect(copy.x === chair.x && copy.z === chair.z).toBe(false);
+  });
+
+  it("preserves the arrangement of a set", () => {
+    const design = createEmptyDesign();
+    const a = place(design, "EL-CHAIR", -1000, 0);
+    const b = place(design, "EL-CHAIR", 1000, 0);
+    const [copyA, copyB] = pasteElements([a, b], design);
+
+    // One offset for the whole set: a copied pair must still be a pair.
+    expect(copyB.x - copyA.x).toBe(b.x - a.x);
+    expect(copyB.z - copyA.z).toBe(b.z - a.z);
+  });
+
+  it("copies an assembly as an assembly, parameters and all", () => {
+    const design = createEmptyDesign();
+    let pavilion = place(design, "ASM-PAVILION");
+    pavilion = patch(design, pavilion, { spanW: 5000, roofStyle: "gable" });
+
+    const [copy] = pasteElements([pavilion], design);
+    expect(copy.params?.spanW).toBe(5000);
+    expect(copy.params?.roofStyle).toBe("gable");
+    expect(deriveParts(copy).some((e) => e.typeId === "EL-ROOF-GABLE")).toBe(true);
+  });
+
+  it("drops elements whose type is no longer in the catalog", () => {
+    const design = createEmptyDesign();
+    const chair = place(design, "EL-CHAIR");
+    const stale = { ...chair, id: "stale", typeId: "EL-GONE" };
+    expect(pasteElements([chair, stale], design)).toHaveLength(1);
+  });
+
+  it("never pastes a derived part still claiming a parent", () => {
+    const design = createEmptyDesign();
+    const pavilion = place(design, "ASM-PAVILION");
+    const part = deriveParts(pavilion)[0];
+
+    const [pasted] = pasteElements([part], design);
+    expect(parentOf(pasted)).toBeUndefined();
   });
 });
